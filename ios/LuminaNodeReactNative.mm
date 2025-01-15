@@ -1,18 +1,27 @@
-#import "LuminaNodeReactNative.h"
+// LuminaModule.m
+#import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
 
-@implementation LuminaNodeReactNative
-RCT_EXPORT_MODULE()
+@interface RCT_EXTERN_MODULE(LuminaNodeReactNative, RCTEventEmitter)
 
-- (NSNumber *)multiply:(double)a b:(double)b {
-    NSNumber *result = @(a * b);
+RCT_EXTERN_METHOD(multiply:(NSInteger)a
+                  withB:(NSInteger)b
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
 
-    return result;
-}
+RCT_EXTERN_METHOD(initializeNode:(NSString *)network
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
 
-- (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
-    (const facebook::react::ObjCTurboModule::InitParams &)params
-{
-    return std::make_shared<facebook::react::NativeLuminaNodeReactNativeSpecJSI>(params);
-}
+RCT_EXTERN_METHOD(isRunning:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(start:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(stop:(RCTPromiseResolveBlock)resolve
+                  reject:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(syncerInfo:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
 @end

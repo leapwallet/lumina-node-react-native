@@ -80,3 +80,6 @@ lib/
 # React Native Codegen
 ios/generated
 android/generated
+example/ios/Podfile.lock
+example/ios/.xcode.env.local
+example/ios/LuminaNodeReactNativeExample.xcworkspace/contents.xcworkspacedata

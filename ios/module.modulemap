@@ -1,0 +1,4 @@
+module LuminaNodeReactNative {
+    header "LuminaNodeReactNative.h"
+    export *
+}
