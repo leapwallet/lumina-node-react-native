@@ -8,6 +8,8 @@ export interface Spec extends TurboModule {
   start(): Promise<string>;
   stop(): Promise<string>;
   syncerInfo(): Promise<string>;
+  startEventLoop(): void;
+  stopEventLoop(): void;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('LuminaNodeReactNative');

@@ -4,6 +4,7 @@ import {
   isRunning,
   stop,
   eventEmitter,
+  startEventLoop,
 } from 'lumina-node-react-native';
 import { useEffect, useState } from 'react';
 import SquareVisualization from './Square-Viz';
@@ -27,6 +28,7 @@ export default function App() {
   useEffect(() => {
     console.log('running', nodeRunning);
     if (nodeRunning) {
+      startEventLoop();
       const handleLuminaNodeEvent = (event: any) => {
         if (event.type !== 'unknown' && event.type !== 'samplingStarted') {
           const x = () => {
@@ -47,7 +49,10 @@ export default function App() {
           }
         }
       };
+
+      console.log('adding listener');
       eventEmitter.addListener('luminaNodeEvent', handleLuminaNodeEvent);
+      console.log('listener added');
     }
     return () => {
       if (nodeRunning) {

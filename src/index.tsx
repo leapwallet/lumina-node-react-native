@@ -1,6 +1,6 @@
 import LuminaNodeReactNative from './NativeLuminaNodeReactNative';
 
-import { NativeEventEmitter, NativeModules } from 'react-native';
+import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
 export const eventEmitter = new NativeEventEmitter(
   NativeModules.LuminaNodeReactNative
@@ -28,4 +28,16 @@ export async function stop() {
 
 export async function syncerInfo() {
   return await LuminaNodeReactNative.syncerInfo();
+}
+
+export async function startEventLoop() {
+  if (Platform.OS === 'android') {
+    return LuminaNodeReactNative.startEventLoop();
+  }
+}
+
+export async function stopEventLoop() {
+  if (Platform.OS === 'android') {
+    return LuminaNodeReactNative.stopEventLoop();
+  }
 }
