@@ -27,13 +27,52 @@ extension SyncingInfo {
   }
 }
 
+extension Network {
+  static func from(_ networkString: String?) -> Network? {
+    guard let networkString = networkString?.lowercased() else {
+      return nil
+    }
+    
+    switch networkString {
+    case "mainnet":
+      return .mainnet
+    case "arabica":
+      return .arabica
+    case "mocha":
+      return .mocha
+    default:
+      return .custom(NetworkId(id: networkString))
+    }
+  }
+}
+
+enum PathError: Error {
+  case applicationSupportUnavailable
+  case directoryCreationFailed(error: Error)
+  case resourceValueUpdateFailed(error: Error)
+}
+
+private actor ListenerState {
+  var hasListeners = false
+  func setHasListeners(_ value: Bool){
+    hasListeners = value
+  }
+}
+
+
+
+
 
 @objc(LuminaNodeReactNative)
 class LuminaNodeReactNative: RCTEventEmitter {
   private var node: LuminaNode?
-  private var hasListeners = false
   private var initialized = false
+  private static let maxSyncingWindow: Int = 30 * 24 * 60 * 60
+  private let listenerState = ListenerState()
+ 
   
+  private let nodeQueue = DispatchQueue(label: "com.lumina.nodeQueue", qos: .userInitiated)
+
   override static func moduleName() -> String {
     return "LuminaNodeReactNative"
   }
@@ -42,125 +81,191 @@ class LuminaNodeReactNative: RCTEventEmitter {
     return ["luminaNodeEvent"]
   }
   
-  @objc(multiply:withB:resolver:rejecter:)
-  func multiply(_ a: Int, b: Int, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
-    let result = a * b
-    resolve(result)
+  func convertTo30DayMaxUInt32(seconds input: Int) -> UInt32 {
+    let clampedSeconds = max(0, min(input, Self.maxSyncingWindow))
+    return UInt32(clampedSeconds)
   }
   
-  @objc(initializeNode:resolver:rejecter:)
-  func initializeNode(network: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+  func getBasePath() throws -> URL {
+    
+    guard let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+      throw PathError.applicationSupportUnavailable
+    }
+    var basePath = appSupportURL.appendingPathComponent("lumina")
+    
+    do {
+      try FileManager.default.createDirectory(atPath: basePath.path, withIntermediateDirectories: true)
+    } catch {
+      throw PathError.directoryCreationFailed(error: error)
+    }
+    
+    
+    var resourceValues = URLResourceValues()
+    resourceValues.isExcludedFromBackup = true
+    do {
+      try basePath.setResourceValues(resourceValues)
+    } catch {
+      throw PathError.resourceValueUpdateFailed(error: error)
+    }
+    return basePath
+  }
+  
+  @objc(start:syncingWindowSecs:resolver:rejecter:)
+  func start(networkString: String, syncingWindowSecs: Int, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    nodeQueue.async {
       Task {
-          do {
-
-            if(initialized == true){
-              resolve(true)
+        do {
+          if(self.initialized == true){
+            let nodeIsRunning = await self.node?.isRunning()
+            print("printing node is running \(String(describing: nodeIsRunning))")
+            if(nodeIsRunning == false){
+              try await self.node?.start()
+              DispatchQueue.main.async {
+                resolve(true)
+              }
+              return
             }else{
-              let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-              let basePath = documentsPath.appendingPathComponent("lumina").path
-              
-              print("Base path: \(basePath)")
-              
-              try FileManager.default.createDirectory(atPath: basePath, withIntermediateDirectories: true)
-              print("Directory created successfully at: \(basePath)")
-                let config = NodeConfig(
-                    basePath: basePath,
-                    network: .mainnet, // Or whatever network you want
-                    bootnodes: nil,    // Use default bootnodes
-                    syncingWindowSecs: nil, // Use default
-                    pruningDelaySecs: nil,  // Use default
-                    batchSize: nil,         // Use default
-                    ed25519SecretKeyBytes: nil // Generate new keypair
-                )
-              
-              print("Node config initialized successfully")
-                
+              DispatchQueue.main.async {
+                resolve(true)
+              }
+              return
+            }
+          }else{
+            guard let network = Network.from(networkString) else {
+              DispatchQueue.main.async {
+                reject("ERROR", "Unable to get network for \(networkString)", nil)
+              }
+              return
+            }
+            let basePath: URL
+            do {
+              basePath = try self.getBasePath()
+            } catch {
+              DispatchQueue.main.async {
+                reject("ERROR", "FAiled to get base apth: \(error.localizedDescription)", error)
+              }
+              return
+            }
+            
+            let config = NodeConfig(
+              basePath: basePath.path,
+              network: network,
+              bootnodes: nil,
+              syncingWindowSecs: self.convertTo30DayMaxUInt32(seconds: syncingWindowSecs),
+              pruningDelaySecs: nil,
+              batchSize: nil,
+              ed25519SecretKeyBytes: nil
+            )
+            
+            
+            do {
               self.node = try LuminaNode(config: config)
               print("LuminaNode initialized successfully")
-                 
+              
               try await self.node?.start()
               print("LuminaNode started successfully")
-                 
+              
               try await self.node?.waitConnected()
               print("LuminaNode connected successfully")
-                 
-              resolve(true)
               self.initialized = true
+              
+              DispatchQueue.main.async {
+                resolve(true)
+              }
+            } catch {
+              DispatchQueue.main.async {
+                reject("ERROR", error.localizedDescription, error)
+              }
             }
-          } catch {
-            reject("ERROR", error.localizedDescription, error )
+            
           }
-      }
-  }
-  
-  @objc(isRunning:rejecter:)
-  func isRunning(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
-    Task {
-      do {
-        let running = try await self.node?.isRunning()
-        resolve(running);
-      } catch {
-        reject("ERROR", error.localizedDescription, error)
+        } catch {
+          DispatchQueue.main.async {
+            reject("ERROR", error.localizedDescription, error)
+          }
+        }
       }
     }
   }
   
-  @objc(start:rejecter:)
-  func start(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
-    Task {
-      do {
-        let result = try await self.node?.start()
-        try await self.node?.waitConnected()
-        resolve("Node started")
-      }catch{
-        reject("ERROR", error.localizedDescription, error)
+  @objc(isRunning:rejecter:)
+  func isRunning(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
+    nodeQueue.async {
+      Task {
+        let running = await self.node?.isRunning()
+        DispatchQueue.main.async {
+          resolve(running)
+        }
       }
     }
   }
   
   @objc(stop:rejecter:)
   func stop(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
-    Task {
-      do {
-        try await self.node?.stop()
-        resolve("Node stopped")
-      }catch{
-        reject("ERROR", error.localizedDescription, error)
+    nodeQueue.async {
+      Task {
+        do {
+          try await self.node?.stop()
+          DispatchQueue.main.async {
+            resolve("Node stopped")
+          }
+
+        }catch{
+          DispatchQueue.main.async{
+            reject("ERROR", error.localizedDescription, error)
+          }
+        }
       }
     }
   }
   
   @objc(syncerInfo:rejecter:)
   func syncerInfo(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
-    Task {
-      do {
-        let info = try await self.node?.syncerInfo()
-        let jsonData = try JSONSerialization.data(withJSONObject: info?.toDictionary(), options: .prettyPrinted)
-        resolve(jsonData)
-      }catch{
-        reject("ERROR", error.localizedDescription, error)
+    nodeQueue.async {
+      Task {
+        do {
+          let info = try await self.node?.syncerInfo()
+          let jsonData = try JSONSerialization.data(withJSONObject: info?.toDictionary(), options: .prettyPrinted)
+          DispatchQueue.main.async {
+            resolve(jsonData)
+          }
+
+        }catch{
+          DispatchQueue.main.async {
+            reject("ERROR", error.localizedDescription, error)
+          }
+        }
       }
     }
   }
   
   override func startObserving() {
-    hasListeners = true
+    Task {
+      await self.listenerState.setHasListeners(true)
+    }
     startEventLoop()
   }
   
   override func stopObserving(){
-    hasListeners = false
+    Task {
+      await self.listenerState.setHasListeners(false)
+    }
+
   }
   
   private func startEventLoop(){
-    Task {
-      while hasListeners {
+    Task.detached(priority: .userInitiated) { [weak self] in
+      guard let self = self else {return}
+      
+      while await self.listenerState.hasListeners {
         guard let node = self.node else {
-          self.sendEvent(withName: "luminaNodeEvent", body: [
-            "type": "error",
-            "error": "Node is not available"
-          ] as [String: Any])
-          hasListeners = false
+          await MainActor.run {
+            self.sendEvent(withName: "luminaNodeEvent", body: [
+              "type": "error",
+              "error": "Node is not available"
+            ] as [String: Any])
+          }
+          await self.listenerState.setHasListeners(false)
           break;
         }
         do {
@@ -233,13 +338,18 @@ class LuminaNodeReactNative: RCTEventEmitter {
               return ["type": "unknown"]
             }
           }()
-          self.sendEvent(withName: "luminaNodeEvent", body: eventDict)
+          await MainActor.run {
+            self.sendEvent(withName: "luminaNodeEvent", body: eventDict)
+          }
+          try await Task.sleep(nanoseconds: 1000_000_000)
         }catch {
           let errorDescription = error.localizedDescription
-          self.sendEvent(withName: "luminaNodeEvent", body: [
-            "type": "error",
-            "error": error.localizedDescription
-          ] as [String: Any])
+          await MainActor.run {
+            self.sendEvent(withName: "luminaNodeEvent", body: [
+              "type": "error",
+              "error": error.localizedDescription
+            ] as [String: Any])
+          }
           break;
         }
       }

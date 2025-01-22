@@ -20,11 +20,11 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import uniffi.lumina_node.Network
+import uniffi.lumina_node.NetworkId
 import uniffi.lumina_node_uniffi.LuminaNode
 import uniffi.lumina_node_uniffi.NodeConfig
 import uniffi.lumina_node_uniffi.NodeEvent
 import java.io.File
-
 
 @ReactModule(name = LuminaNodeReactNativeModule.NAME)
 class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
@@ -33,12 +33,15 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   var node: LuminaNode? = null;
   var isEventLoopRunning: Boolean = false
   var listenerCount: Int = 0
+  private var isInitialized = false
+
   private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
   private var eventLoopJob: Job? = null
 
 
   companion object {
     const val NAME = "LuminaNodeReactNative"
+    private const val MAX_SYNC_WINDOW: Double = 30.0 * 24 * 60 * 60
   }
 
 
@@ -50,45 +53,70 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
     return NAME
   }
 
-  @ReactMethod
-  override fun multiply(a: Double, b: Double, promise: Promise?) {
-    promise?.resolve(a * b);
+  fun convert30DayMaxUInt(input: Double): UInt {
+    return input.coerceIn(0.0, MAX_SYNC_WINDOW).toUInt()
+  }
+
+  fun getNetwork(networkString: String): Network {
+    return when(networkString.lowercase()){
+      "mainnet" -> Network.Mainnet
+      "arabica" -> Network.Arabica
+      "mocha" -> Network.Mocha
+      else -> Network.Custom(NetworkId(networkString))
+    }
   }
 
   @ReactMethod
-  override fun initializeNode(network: String?, promise: Promise?) {
+  override fun start(networkString: String, syncingWindowSecs: Double, promise: Promise?) {
     runBlocking {
       try {
-        Log.i("Lumina node", "starting node: init base path")
-        val documentsPath = reactApplicationContext.filesDir
-        val basePath = File(documentsPath, "lumina")
+        if(isInitialized){
 
-        if(!basePath.exists()){
-          basePath.mkdirs()
+          if(node?.isRunning() == false){
+            Log.d("Lumina node", "starting node")
+            node?.start()
+            startEventLoop()
+            promise?.resolve(true)
+          }else{
+            Log.d("Lumina node", "not starting node")
+            promise?.resolve(true)
+          }
+        }else{
+          Log.d("Lumina node", "starting node: init base path")
+          val documentsPath = reactApplicationContext.filesDir
+          val basePath = File(documentsPath, "lumina")
+
+          if(!basePath.exists()){
+            basePath.mkdirs()
+          }
+          Log.d("Lumina node", "starting node: init base path success")
+          val network = getNetwork(networkString)
+          val config = NodeConfig(
+            basePath = basePath.path,
+            network = network,
+            bootnodes = null,
+            syncingWindowSecs = convert30DayMaxUInt(syncingWindowSecs),
+            pruningDelaySecs = null,
+            batchSize = null,
+            ed25519SecretKeyBytes = null
+          )
+          Log.d("Lumina node", "starting node: init node config success")
+
+
+          node = LuminaNode(config = config)
+          Log.d("Lumina node", "starting node: init node success")
+
+          node?.start()
+          Log.d("Lumina node", "starting node: init node start success")
+
+          node?.waitConnected()
+          Log.d("Lumina node", "starting node: init node connection acquired")
+          isInitialized = true
+          startEventLoop()
+          promise?.resolve(true)
         }
-        Log.i("Lumina node", "starting node: init base path success")
-
-        val config = NodeConfig(
-          basePath = basePath.path,
-          network = Network.Mainnet,
-          bootnodes = null,
-          syncingWindowSecs = null,
-          pruningDelaySecs = null,
-          batchSize = null,
-          ed25519SecretKeyBytes = null
-        )
-        Log.i("Lumina node", "starting node: init node config success")
 
 
-        node = LuminaNode(config = config)
-        Log.i("Lumina node", "starting node: init node success")
-
-        node?.start()
-        Log.i("Lumina node", "starting node: init node start success")
-
-        node?.waitConnected()
-        Log.i("Lumina node", "starting node: init node connection acquired")
-        promise?.resolve(true)
       }catch(e: Exception){
         e.message?.let { Log.d("Lumina Node", it) };
         promise?.reject("Unable to start node")
@@ -101,15 +129,6 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
     runBlocking {
       val running = node?.isRunning()
       promise?.resolve(running)
-    }
-  }
-
-  @ReactMethod
-  override fun start(promise: Promise?) {
-    runBlocking {
-      node?.start()
-      node?.waitConnected()
-      promise?.resolve("Node Started")
     }
   }
 
@@ -131,6 +150,12 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  override fun peerTrackerInfo(promise: Promise?) {
+    runBlocking {
+      val info = node?.peerTrackerInfo()
+      promise?.resolve(info?.numConnectedPeers)
+    }
+  }
 
 
   private fun sendEvent(
@@ -148,11 +173,11 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun addListener(eventName: String) {
-    Log.i("Lumina node", "adding listener")
+    Log.d("Lumina node", "adding listener")
     listenerCount += 1;
-    Log.i("Lumina node", "condition $listenerCount $isEventLoopRunning")
+    Log.d("Lumina node", "condition $listenerCount $isEventLoopRunning")
     if(listenerCount == 1 && !isEventLoopRunning){
-      Log.i("Lumina node", "starting event loop")
+      Log.d("Lumina node", "starting event loop")
       startEventLoopIfNeeded()
       isEventLoopRunning = true
     }
@@ -168,7 +193,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   private fun startEventLoopIfNeeded() {
-    Log.i("Lumina node", "Starting Event loop")
+    Log.d("Lumina node", "Starting Event loop")
     if (eventLoopJob == null) {
       eventLoopJob = coroutineScope.launch {
         while (listenerCount != 0) {
@@ -240,7 +265,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
                 "tookMs" to event.tookMs
               )
               is NodeEvent.SamplingStarted -> {
-                Log.i("LuminaNode", "Sampling started $event.height")
+                Log.d("LuminaNode", "Sampling started $event.height")
                 mapOf(
                 "type" to "samplingStarted",
                 "height" to event.height,
@@ -273,7 +298,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   override fun startEventLoop(){
-    Log.i("Lumina node", "starting event loop")
+    Log.d("Lumina node", "starting event loop")
     listenerCount += 1
     if(listenerCount == 1 && !isEventLoopRunning){
       startEventLoopIfNeeded()
@@ -286,6 +311,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
     if(isEventLoopRunning){
       eventLoopJob?.cancel()
       eventLoopJob = null
+      listenerCount = 0
       isEventLoopRunning = false
     }
   }

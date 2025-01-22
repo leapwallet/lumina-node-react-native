@@ -83,3 +83,11 @@ android/generated
 example/ios/Podfile.lock
 example/ios/.xcode.env.local
 example/ios/LuminaNodeReactNativeExample.xcworkspace/contents.xcworkspacedata
+ios/lumina.xcframework
+android/src/main/jniLibs
+android/src/main/java/tech
+ios/lumina_node_uniffi.swift
+
+lumina/node-uniffi/app/**
+lumina/node-uniffi/ios/**
+lumina/node-uniffi/bindings/**

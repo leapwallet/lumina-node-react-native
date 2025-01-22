@@ -1,7 +1,0 @@
-module lumina_node_uniffiFFI {
-    header "lumina_node_uniffiFFI.h"
-    export *
-}module lumina_nodeFFI {
-    header "lumina_nodeFFI.h"
-    export *
-}

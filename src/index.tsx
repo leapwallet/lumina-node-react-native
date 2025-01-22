@@ -2,24 +2,18 @@ import LuminaNodeReactNative from './NativeLuminaNodeReactNative';
 
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 
+type Network = 'mainnet' | 'arabica' | 'mocha';
+
 export const eventEmitter = new NativeEventEmitter(
   NativeModules.LuminaNodeReactNative
 );
 
-export function multiply(a: number, b: number): Promise<number> {
-  return LuminaNodeReactNative.multiply(a, b);
-}
-
-export async function initializeNode(network: string) {
-  return await LuminaNodeReactNative.initializeNode(network);
+export async function start(network: Network, syncingWindowSecs: number) {
+  return await LuminaNodeReactNative.start(network, syncingWindowSecs);
 }
 
 export async function isRunning() {
   return await LuminaNodeReactNative.isRunning();
-}
-
-export async function start() {
-  return await LuminaNodeReactNative.start();
 }
 
 export async function stop() {

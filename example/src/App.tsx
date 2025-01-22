@@ -1,58 +1,26 @@
 import { Text, View, StyleSheet, Pressable } from 'react-native';
-import {
-  initializeNode,
-  isRunning,
-  stop,
-  eventEmitter,
-  startEventLoop,
-} from 'lumina-node-react-native';
+import { isRunning, stop, eventEmitter, start } from 'lumina-node-react-native';
 import { useEffect, useState } from 'react';
 import SquareVisualization from './Square-Viz';
-import { LogViewer } from './LogViewer';
 
-export default function App() {
-  const [nodeRunning, setNodeRunning] = useState<boolean>();
+const LIGHT_NODE_SYNCING_WINDOW_SECS = 2 * 24 * 60 * 60;
+
+function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
   const [visualData, setVisualData] = useState<any>();
-  const [logs, setLogs] = useState<any>([]);
-  useEffect(() => {
-    async function fn() {
-      const _isRunning = await isRunning();
-      if (_isRunning) {
-        setNodeRunning(true);
-      }
-    }
-
-    fn();
-  }, []);
 
   useEffect(() => {
     console.log('running', nodeRunning);
     if (nodeRunning) {
-      startEventLoop();
       const handleLuminaNodeEvent = (event: any) => {
-        if (event.type !== 'unknown' && event.type !== 'samplingStarted') {
-          const x = () => {
-            setLogs((prevEvent: any) => {
-              if (prevEvent?.length > 50) {
-                return setLogs([event]);
-              } else {
-                return setLogs(prevEvent?.concat([event]) ?? []);
-              }
-            });
-          };
-          x();
-        }
+        console.log('logging event', event);
         if (event.type === 'samplingStarted') {
           if (visualData?.height !== event.height) {
-            console.log('logging lumina event', event);
             setVisualData(event);
           }
         }
       };
 
-      console.log('adding listener');
       eventEmitter.addListener('luminaNodeEvent', handleLuminaNodeEvent);
-      console.log('listener added');
     }
     return () => {
       if (nodeRunning) {
@@ -60,6 +28,59 @@ export default function App() {
       }
     };
   }, [nodeRunning, visualData]);
+
+  return <>{visualData ? <SquareVisualization events={visualData} /> : null}</>;
+}
+
+export default function App() {
+  const [nodeRunning, setNodeRunning] = useState<boolean>();
+  useEffect(() => {
+    async function fn() {
+      const _isRunning = await isRunning();
+      if (_isRunning) {
+        setNodeRunning(true);
+      }
+    }
+    fn();
+  }, []);
+
+  const toggleNode = async () => {
+    try {
+      console.log('toggle node', nodeRunning);
+      if (nodeRunning) {
+        console.log('stopping node');
+        await stop();
+        const _nodeRunning = await isRunning();
+        console.log('logging is running 1', _nodeRunning);
+        setNodeRunning(_nodeRunning);
+      } else {
+        console.log('starting node');
+        await start('mainnet', LIGHT_NODE_SYNCING_WINDOW_SECS);
+        const _nodeRunning = await isRunning();
+        setNodeRunning(_nodeRunning);
+      }
+    } catch (e) {
+      console.log('logging e', e);
+    }
+  };
+
+  const stopNode = async () => {
+    try {
+      console.log('stopping node');
+      await stop();
+      const _nodeRunning = await isRunning();
+      console.log('logging is running', _nodeRunning);
+      setNodeRunning(_nodeRunning);
+    } catch (e) {
+      console.log('logging e', e);
+    }
+  };
+
+  const btn = () => {
+    console.log('btn clicked');
+  };
+
+  console.log('app');
 
   return (
     <View style={styles.container}>
@@ -70,29 +91,26 @@ export default function App() {
             ...styles.btn,
             backgroundColor: nodeRunning ? 'red' : 'green',
           }}
-          onPress={async () => {
-            try {
-              if (nodeRunning) {
-                stop();
-              } else {
-                console.log('started');
-                await initializeNode('mainnet');
-                const _nodeRunning = await isRunning();
-                setNodeRunning(_nodeRunning);
-                console.log('start finished');
-              }
-            } catch (e) {
-              console.log('logging e', e);
-            }
-          }}
+          onPress={toggleNode}
         >
           <Text style={styles.btnText}>
             {nodeRunning ? 'Stop ' : 'Start '}Node
           </Text>
         </Pressable>
+        <Pressable
+          style={{ ...styles.btn, backgroundColor: 'red' }}
+          onPress={stopNode}
+        >
+          <Text>Stop Node</Text>
+        </Pressable>
+        <Pressable
+          style={{ ...styles.btn, backgroundColor: 'blue' }}
+          onPress={btn}
+        >
+          <Text>click me</Text>
+        </Pressable>
       </View>
-      {logs?.length > 0 ? <LogViewer logs={logs} /> : null}
-      {visualData ? <SquareVisualization events={visualData} /> : null}
+      <NodeEvents nodeRunning={nodeRunning} />
     </View>
   );
 }
