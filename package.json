@@ -1,5 +1,5 @@
 {
-  "name": "lumina-node-react-native",
+  "name": "@leapwallet/lumina-node-react-native",
   "version": "0.1.0",
   "description": "Lumina node for react native apps",
   "source": "./src/index.tsx",
