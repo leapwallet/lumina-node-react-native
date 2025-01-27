@@ -161,7 +161,6 @@
     "source": "src",
     "output": "lib",
     "targets": [
-      "codegen",
       [
         "commonjs",
         {
@@ -182,19 +181,6 @@
         }
       ]
     ]
-  },
-  "codegenConfig": {
-    "name": "RNLuminaNodeReactNativeSpec",
-    "type": "modules",
-    "jsSrcsDir": "src",
-    "outputDir": {
-      "ios": "ios/generated",
-      "android": "android/generated"
-    },
-    "android": {
-      "javaPackageName": "com.luminanodereactnative"
-    },
-    "includesGeneratedCode": true
   },
   "create-react-native-library": {
     "type": "turbo-module",

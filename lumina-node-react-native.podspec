@@ -33,11 +33,12 @@ Pod::Spec.new do |s|
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     'SWIFT_INCLUDE_PATHS' => '$(PODS_TARGET_SRCROOT)/ios',
-    'FRAMEWORK_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/ios',
-    'OTHER_LDFLAGS' => '-ObjC'
+    'FRAMEWORK_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/ios/Frameworks/',
+    'OTHER_LDFLAGS' => '-ObjC',
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/ios/Frameworks/lumina.xcframework/ios-arm64/Headers"'
   }
-
-  s.vendored_frameworks = ["ios/lumina.xcframework"]
+  s.static_framework = true
+  s.vendored_frameworks = ["ios/Frameworks/lumina.xcframework"]
 
   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.
   if respond_to?(:install_modules_dependencies, true)

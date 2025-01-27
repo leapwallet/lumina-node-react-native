@@ -62,7 +62,7 @@ private actor ListenerState {
 
 
 
-
+@available(iOS 14, *)
 @objc(LuminaNodeReactNative)
 class LuminaNodeReactNative: RCTEventEmitter {
   private var node: LuminaNode?
