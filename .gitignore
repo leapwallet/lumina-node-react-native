@@ -91,3 +91,4 @@ ios/lumina_node_uniffi.swift
 lumina/node-uniffi/app/**
 lumina/node-uniffi/ios/**
 lumina/node-uniffi/bindings/**
+ios/Frameworks

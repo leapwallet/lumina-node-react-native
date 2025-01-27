@@ -1,5 +1,10 @@
 import { Text, View, StyleSheet, Pressable } from 'react-native';
-import { isRunning, stop, eventEmitter, start } from 'lumina-node-react-native';
+import {
+  isRunning,
+  stop,
+  eventEmitter,
+  start,
+} from '@leapwallet/lumina-node-react-native';
 import { useEffect, useState } from 'react';
 import SquareVisualization from './Square-Viz';
 

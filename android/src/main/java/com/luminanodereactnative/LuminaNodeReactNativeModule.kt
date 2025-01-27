@@ -5,6 +5,7 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContext
+import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
@@ -28,7 +29,7 @@ import java.io.File
 
 @ReactModule(name = LuminaNodeReactNativeModule.NAME)
 class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
-  NativeLuminaNodeReactNativeSpec(reactContext) {
+  ReactContextBaseJavaModule(reactContext) {
 
   var node: LuminaNode? = null;
   var isEventLoopRunning: Boolean = false
@@ -67,7 +68,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun start(networkString: String, syncingWindowSecs: Double, promise: Promise?) {
+  fun start(networkString: String, syncingWindowSecs: Double, promise: Promise?) {
     runBlocking {
       try {
         if(isInitialized){
@@ -125,7 +126,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun isRunning(promise: Promise?) {
+  fun isRunning(promise: Promise?) {
     runBlocking {
       val running = node?.isRunning()
       promise?.resolve(running)
@@ -133,7 +134,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun stop(promise: Promise?) {
+  fun stop(promise: Promise?) {
     runBlocking {
       node?.stop()
       stopEventLoop()
@@ -142,7 +143,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun syncerInfo(promise: Promise?) {
+  fun syncerInfo(promise: Promise?) {
     runBlocking {
       val info = node?.syncerInfo()
       val json = Gson().toJson(info)
@@ -150,7 +151,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
     }
   }
 
-  override fun peerTrackerInfo(promise: Promise?) {
+  fun peerTrackerInfo(promise: Promise?) {
     runBlocking {
       val info = node?.peerTrackerInfo()
       promise?.resolve(info?.numConnectedPeers)
@@ -297,7 +298,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun startEventLoop(){
+  fun startEventLoop(){
     Log.d("Lumina node", "starting event loop")
     listenerCount += 1
     if(listenerCount == 1 && !isEventLoopRunning){
@@ -307,7 +308,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   @ReactMethod
-  override fun stopEventLoop() {
+  fun stopEventLoop() {
     if(isEventLoopRunning){
       eventLoopJob?.cancel()
       eventLoopJob = null
