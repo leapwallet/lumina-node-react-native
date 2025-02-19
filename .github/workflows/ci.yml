@@ -42,7 +42,7 @@ jobs:
       - name: Run unit tests
         run: yarn test --maxWorkers=2 --coverage
 
-  build-library:
+  generate-lumina:
     runs-on: macos-latest
     steps:
       - name: Checkout repo with submodules
@@ -52,25 +52,77 @@ jobs:
       - name: Initialize and update submodules
         run: git submodule update --init --recursive
 
-      - name: Setup
-        uses: ./.github/actions/setup
-
-      - name: Set up Rust
+      - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: minimal
           override: true
 
-      - name: Build lumina
-        run: yarn build:lumina
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk
+
+      - name: Try to download artifacts
+        id: downloadArtifacts
+        uses: actions/download-artifacts@v3
+        with:
+          name: uniffi-bindings
+        continue-on-error: true
+
+      - name: Build iOS Bindings
+        if: steps.downloadArtifacts.outcome == 'failure'
+        run: |
+          cd lumina/node-uniffi && ./build-ios.sh
+
+      - name: Build Android Bindings
+        if: steps.downloadArtifacts.outcome == 'failure'
+        run: |
+          cd lumina/node-uniffi && ./build-android.sh
+
+      - name: Upload Binaries
+        if: steps.downloadArtifacts.outcome == 'failure'
+        uses: actions/upload-artifact@v3
+        with:
+          name: uniffi-bindings
+          path: |
+            ./lumina/node-uniffi/app/src/main/jniLibs/
+            ./lumina/node-uniffi/ios/lumina.xcframework/
+            ./lumina/node-uniffi/ios/lumina_node.swift
+            ./lumina/node-uniffi/ios/lumina_node_uniffi.swift
+
+  build-library:
+    needs: [lint, test, generate-lumina]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download Cached Bindings
+        uses: actions/download-artifact@v3
+        with:
+          name: uniffi-bindings
+        continue-on-error: true
+
+      - name: Copy Cached Bindings
+        run: |
+          mkdir -p android/src/main/jniLibs/
+          mkdir -p android/src/main/java/tech/
+          mkdir -p ios/Frameworks/
+          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
+          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
+          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
+          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node.swift ios/
+          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
+
+      - name: Setup
+        uses: ./.github/actions/setup
 
       - name: Build package
         run: yarn prepare
 
   publish-library:
-    needs: [lint, test, build-library]
-    runs-on: macos-latest
+    needs: [lint, test, generate-lumina, build-library]
+    runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -78,11 +130,23 @@ jobs:
     steps:
       - name: Checkout repo with submodules
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Initialize and update submodules
-        run: git submodule update --init --recursive
+      - name: Download Cached Bindings
+        uses: actions/download-artifact@v3
+        with:
+          name: uniffi-bindings
+        continue-on-error: true
+
+      - name: Copy Cached Bindings
+        run: |
+          mkdir -p android/src/main/jniLibs/
+          mkdir -p android/src/main/java/tech/
+          mkdir -p ios/Frameworks/
+          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
+          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
+          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
+          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node.swift ios/
+          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -93,16 +157,6 @@ jobs:
           node-version: '18.x'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@leapwallet'
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-
-      - name: build lumina
-        run: yarn build:lumina
 
       - name: Build package
         run: yarn prepare
