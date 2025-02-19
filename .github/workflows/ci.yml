@@ -42,6 +42,23 @@ jobs:
       - name: Run unit tests
         run: yarn test --maxWorkers=2 --coverage
 
+  build-library:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo with submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup
+        uses: ./.github/actions/setup
+
+      - name: Build lumina
+        run: yarn build:lumina
+
+      - name: Build package
+        run: yarn prepare
+
   publish-library:
     needs: [lint, test, build-library]
     runs-on: ubuntu-latest
