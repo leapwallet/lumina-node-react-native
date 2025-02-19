@@ -2,6 +2,7 @@ package com.luminanodereactnative
 
 import android.util.Log
 import com.facebook.react.bridge.Arguments
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContext
@@ -29,7 +30,7 @@ import java.io.File
 
 @ReactModule(name = LuminaNodeReactNativeModule.NAME)
 class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
-  ReactContextBaseJavaModule(reactContext) {
+  ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
 
   var node: LuminaNode? = null;
   var isEventLoopRunning: Boolean = false
@@ -37,17 +38,26 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   private var isInitialized = false
 
   private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+  private var wasRunningBeforeBackground = false
   private var eventLoopJob: Job? = null
 
 
   companion object {
     const val NAME = "LuminaNodeReactNative"
     private const val MAX_SYNC_WINDOW: Double = 30.0 * 24 * 60 * 60
+    private val filterEventTypes: Array<String> = arrayOf(
+      "samplingStarted",
+      "samplingFinished",
+      "peerConnected",
+      "connectingToBootnodes"
+    )
   }
 
 
   init {
     System.loadLibrary("lumina_node_uniffi")
+    reactContext.addLifecycleEventListener(this)
+
   }
 
   override fun getName(): String {
@@ -65,6 +75,48 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
       "mocha" -> Network.Mocha
       else -> Network.Custom(NetworkId(networkString))
     }
+  }
+
+  override fun onHostDestroy() {
+    stopEventLoop()
+    coroutineScope.cancel()
+    reactApplicationContext.removeLifecycleEventListener(this)
+  }
+
+  override fun onHostPause() {
+    coroutineScope.launch {
+      try {
+        wasRunningBeforeBackground = node?.isRunning() ?: false
+        if (wasRunningBeforeBackground) {
+          node?.stop()
+          stopEventLoop()
+          Log.d("Lumina node", "Node stopped successfully in background")
+        }
+      } catch (e: Exception) {
+        Log.e("Lumina node", "Error stopping node in background: ${e.message}")
+      }
+    }
+  }
+
+  override fun onHostResume(){
+    if (wasRunningBeforeBackground && isInitialized) {
+      coroutineScope.launch {
+        try {
+          if (node?.isRunning() == false) {
+            node?.start()
+            node?.waitConnected()
+            Log.d("Lumina node", "Node restarted successfully in foreground")
+            startEventLoopIfNeeded()
+            isEventLoopRunning = true
+          }
+          wasRunningBeforeBackground = false
+        } catch (e: Exception) {
+          Log.e("Lumina node", "Error restarting node in foreground: ${e.message}")
+          wasRunningBeforeBackground = false
+        }
+      }
+    }
+
   }
 
   @ReactMethod
@@ -97,8 +149,8 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
             network = network,
             bootnodes = null,
             syncingWindowSecs = convert30DayMaxUInt(syncingWindowSecs),
-            pruningDelaySecs = null,
-            batchSize = null,
+            pruningDelaySecs = 60.toUInt(),
+            batchSize = 64UL,
             ed25519SecretKeyBytes = null
           )
           Log.d("Lumina node", "starting node: init node config success")
@@ -109,11 +161,13 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 
           node?.start()
           Log.d("Lumina node", "starting node: init node start success")
+          isInitialized = true
+
+          startEventLoop()
 
           node?.waitConnected()
           Log.d("Lumina node", "starting node: init node connection acquired")
-          isInitialized = true
-          startEventLoop()
+
           promise?.resolve(true)
         }
 
@@ -174,9 +228,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun addListener(eventName: String) {
-    Log.d("Lumina node", "adding listener")
     listenerCount += 1;
-    Log.d("Lumina node", "condition $listenerCount $isEventLoopRunning")
     if(listenerCount == 1 && !isEventLoopRunning){
       Log.d("Lumina node", "starting event loop")
       startEventLoopIfNeeded()
@@ -262,34 +314,38 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
               is NodeEvent.SamplingFinished -> mapOf(
                 "type" to "samplingFinished",
                 "height" to event.height,
-                "accepted" to event.accepted,
-                "tookMs" to event.tookMs
+//                "accepted" to event.accepted,
+//                "tookMs" to event.tookMs
               )
               is NodeEvent.SamplingStarted -> {
                 Log.d("LuminaNode", "Sampling started $event.height")
                 mapOf(
                 "type" to "samplingStarted",
                 "height" to event.height,
-                "squareWidth" to event.squareWidth,
-                "shares" to event.shares.map {
-                  mapOf(
-                    "row" to it.row,
-                    "column" to it.column
-                  )
-                }
+//                "squareWidth" to event.squareWidth,
+//                "shares" to event.shares.map {
+//                  mapOf(
+//                    "row" to it.row,
+//                    "column" to it.column
+//                  )
+//                }
               )}
               is NodeEvent.ShareSamplingResult -> mapOf(
                 "type" to "shareSamplingResult",
                 "height" to event.height,
-                "squareWidth" to event.squareWidth,
-                "row" to event.row,
-                "column" to event.column,
-                "accepted" to event.accepted
-
+//                "squareWidth" to event.squareWidth,
+//                "row" to event.row,
+//                "column" to event.column,
+//                "accepted" to event.accepted
               )
             }
-            val dataMap = convertMapToWritableMap(eventData)
-            sendEvent(reactContext = reactApplicationContext, "luminaNodeEvent", params = dataMap)
+
+            Log.d("Lumina node", "$eventData")
+            if(filterEventTypes.contains(eventData["type"])){
+              val dataMap = convertMapToWritableMap(eventData)
+              sendEvent(reactContext = reactApplicationContext, "luminaNodeEvent", params = dataMap)
+              delay(10000)
+            }
           }
           delay(100)
         }

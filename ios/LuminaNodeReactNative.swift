@@ -4,7 +4,8 @@
 //
 //  Created by Mayank Yadav on 07/01/25.
 //
-
+import UIKit
+import React
 import Foundation
 import lumina_node_uniffiFFI
 
@@ -60,13 +61,14 @@ private actor ListenerState {
 }
 
 
-
-
-@available(iOS 14, *)
 @objc(LuminaNodeReactNative)
 class LuminaNodeReactNative: RCTEventEmitter {
   private var node: LuminaNode?
   private var initialized = false
+  private var paused = false
+  
+  private var wasRunningBeforeBackground = false
+
   private static let maxSyncingWindow: Int = 30 * 24 * 60 * 60
   private let listenerState = ListenerState()
  
@@ -79,6 +81,73 @@ class LuminaNodeReactNative: RCTEventEmitter {
   
   override func supportedEvents() -> [String] {
     return ["luminaNodeEvent"]
+  }
+  
+  override init(){
+    super.init()
+    
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(applicationWillEnterForeground),
+      name: UIApplication.willEnterForegroundNotification,
+      object: nil
+    )
+    
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(applicationWillEnterForeground),
+      name: UIApplication.willEnterForegroundNotification,
+      object: nil
+    )
+    
+  }
+  
+  deinit {
+    NotificationCenter.default.removeObserver(self)
+  }
+  
+  @objc private func applicationWillEnterForeground(_ notification: NSNotification){
+    guard initialized && wasRunningBeforeBackground else { return }
+      nodeQueue.async {
+        Task {
+          do {
+            if let nodeIsRunning = await self.node?.isRunning(), !nodeIsRunning {
+              
+              try await self.node?.start()
+              try await self.node?.waitConnected()
+              print("Node restarted successfully in foreground \(self.paused)")
+              
+              await self.listenerState.setHasListeners(true)
+              self.startEventLoop()
+            }
+            
+            self.wasRunningBeforeBackground = false
+
+          } catch {
+            print("Error restarting node in foreground: \(error.localizedDescription)")
+            self.wasRunningBeforeBackground = false
+          }
+        }
+      }
+    
+  }
+  
+  @objc private func applicationDidEnterBackground(_ notification: Notification) {
+    nodeQueue.async {
+      Task {
+        do {
+          
+          self.wasRunningBeforeBackground = await self.node?.isRunning() ?? false
+          if self.wasRunningBeforeBackground {
+            try await self.node?.stop()
+            await self.listenerState.setHasListeners(false)
+            print("Node stopped successfully in background")
+          }
+        } catch {
+          print("Error stopping node in background: \(error.localizedDescription)")
+        }
+      }
+    }
   }
   
   func convertTo30DayMaxUInt32(seconds input: Int) -> UInt32 {
@@ -116,6 +185,7 @@ class LuminaNodeReactNative: RCTEventEmitter {
       Task {
         do {
           if(self.initialized == true){
+           
             let nodeIsRunning = await self.node?.isRunning()
             print("printing node is running \(String(describing: nodeIsRunning))")
             if(nodeIsRunning == false){
@@ -152,7 +222,7 @@ class LuminaNodeReactNative: RCTEventEmitter {
               network: network,
               bootnodes: nil,
               syncingWindowSecs: self.convertTo30DayMaxUInt32(seconds: syncingWindowSecs),
-              pruningDelaySecs: nil,
+              pruningDelaySecs: 120,
               batchSize: nil,
               ed25519SecretKeyBytes: nil
             )
@@ -250,7 +320,6 @@ class LuminaNodeReactNative: RCTEventEmitter {
     Task {
       await self.listenerState.setHasListeners(false)
     }
-
   }
   
   private func startEventLoop(){
@@ -355,6 +424,4 @@ class LuminaNodeReactNative: RCTEventEmitter {
       }
     }
   }
-  
-  
 }

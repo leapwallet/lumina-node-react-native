@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
   s.homepage     = package["homepage"]
   s.license      = package["license"]
   s.authors      = package["author"]
-  s.platforms    = { :ios => min_ios_version_supported }
+  s.platform    = :ios, '14.0'
   s.source       = { :git => "https://github.com/leapwallet/lumina-node-react-native.git", :tag => "#{s.version}" }
   s.source_files = "ios/**/*.{h,m,mm,cpp,swift}"
   s.private_header_files = "ios/generated/**/*.h"
@@ -35,8 +35,20 @@ Pod::Spec.new do |s|
     'SWIFT_INCLUDE_PATHS' => '$(PODS_TARGET_SRCROOT)/ios',
     'FRAMEWORK_SEARCH_PATHS' => '$(PODS_TARGET_SRCROOT)/ios/Frameworks/',
     'OTHER_LDFLAGS' => '-ObjC',
-    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/ios/Frameworks/lumina.xcframework/ios-arm64/Headers"'
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/ios/Frameworks/lumina.xcframework/**/Headers"',
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64',
+    'VALID_ARCHS' => 'arm64',
+    'SUPPORTS_MACCATALYST' => 'NO',
+    'SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD' => 'NO'
   }
+
+
+  s.user_target_xcconfig = {
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64',
+    'VALID_ARCHS' => 'arm64'
+  }
+
+
   s.static_framework = true
   s.vendored_frameworks = ["ios/Frameworks/lumina.xcframework"]
 
