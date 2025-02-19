@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Set up Rust
-        uses: actions-rs/toolchain@v4
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: minimal
@@ -95,7 +95,7 @@ jobs:
           scope: '@leapwallet'
 
       - name: Setup Rust
-        uses: actions-rs/toolchain@v4
+        uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: minimal
