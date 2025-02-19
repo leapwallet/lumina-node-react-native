@@ -43,7 +43,7 @@ jobs:
         run: yarn test --maxWorkers=2 --coverage
 
   build-library:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout repo with submodules
         uses: actions/checkout@v4
@@ -70,7 +70,7 @@ jobs:
 
   publish-library:
     needs: [lint, test, build-library]
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
