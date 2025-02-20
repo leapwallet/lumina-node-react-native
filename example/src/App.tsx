@@ -1,28 +1,20 @@
-import { Text, View, StyleSheet, Pressable } from 'react-native';
-import {
-  isRunning,
-  stop,
-  eventEmitter,
-  start,
-} from '@leapwallet/lumina-node-react-native';
+import { Text, View, StyleSheet, Pressable, FlatList } from 'react-native';
+import { isRunning, stop, eventEmitter, start } from 'lumina-node-react-native';
 import { useEffect, useState } from 'react';
-import SquareVisualization from './Square-Viz';
 
 const LIGHT_NODE_SYNCING_WINDOW_SECS = 2 * 24 * 60 * 60;
 
+function LogText({ item }: { item: any }) {
+  return <Text>{item}</Text>;
+}
+
 function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
-  const [visualData, setVisualData] = useState<any>();
+  const [visualData, setVisualData] = useState<any>([]);
 
   useEffect(() => {
-    console.log('running', nodeRunning);
     if (nodeRunning) {
       const handleLuminaNodeEvent = (event: any) => {
-        console.log('logging event', event);
-        if (event.type === 'samplingStarted') {
-          if (visualData?.height !== event.height) {
-            setVisualData(event);
-          }
-        }
+        setVisualData([event, ...visualData]);
       };
 
       eventEmitter.addListener('luminaNodeEvent', handleLuminaNodeEvent);
@@ -34,7 +26,13 @@ function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
     };
   }, [nodeRunning, visualData]);
 
-  return <>{visualData ? <SquareVisualization events={visualData} /> : null}</>;
+  return (
+    <FlatList
+      data={visualData}
+      renderItem={LogText}
+      keyExtractor={(item) => item}
+    />
+  );
 }
 
 export default function App() {
@@ -51,15 +49,11 @@ export default function App() {
 
   const toggleNode = async () => {
     try {
-      console.log('toggle node', nodeRunning);
       if (nodeRunning) {
-        console.log('stopping node');
         await stop();
         const _nodeRunning = await isRunning();
-        console.log('logging is running 1', _nodeRunning);
         setNodeRunning(_nodeRunning);
       } else {
-        console.log('starting node');
         await start('mainnet', LIGHT_NODE_SYNCING_WINDOW_SECS);
         const _nodeRunning = await isRunning();
         setNodeRunning(_nodeRunning);
@@ -71,21 +65,13 @@ export default function App() {
 
   const stopNode = async () => {
     try {
-      console.log('stopping node');
       await stop();
       const _nodeRunning = await isRunning();
-      console.log('logging is running', _nodeRunning);
       setNodeRunning(_nodeRunning);
     } catch (e) {
       console.log('logging e', e);
     }
   };
-
-  const btn = () => {
-    console.log('btn clicked');
-  };
-
-  console.log('app');
 
   return (
     <View style={styles.container}>
@@ -107,12 +93,6 @@ export default function App() {
           onPress={stopNode}
         >
           <Text>Stop Node</Text>
-        </Pressable>
-        <Pressable
-          style={{ ...styles.btn, backgroundColor: 'blue' }}
-          onPress={btn}
-        >
-          <Text>click me</Text>
         </Pressable>
       </View>
       <NodeEvents nodeRunning={nodeRunning} />
