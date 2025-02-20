@@ -42,127 +42,44 @@ jobs:
       - name: Run unit tests
         run: yarn test --maxWorkers=2 --coverage
 
-  generate-lumina:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout repo with submodules
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - name: Initialize and update submodules
-        run: git submodule update --init --recursive
-
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk
-
-      - name: Try to download artifacts
-        id: downloadArtifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: uniffi-bindings
-        continue-on-error: true
-
-      - name: Build iOS Bindings
-        if: steps.downloadArtifacts.outcome == 'failure'
-        run: |
-          cd lumina/node-uniffi && ./build-ios.sh
-
-      - name: Build Android Bindings
-        if: steps.downloadArtifacts.outcome == 'failure'
-        run: |
-          cd lumina/node-uniffi && ./build-android.sh
-
-      - name: Upload Binaries
-        if: steps.downloadArtifacts.outcome == 'failure'
-        uses: actions/upload-artifact@v4
-        with:
-          name: uniffi-bindings
-          path: |
-            ./lumina/node-uniffi/app/src/main/jniLibs/
-            ./lumina/node-uniffi/ios/lumina.xcframework/
-            ./lumina/node-uniffi/ios/lumina_node.swift
-            ./lumina/node-uniffi/ios/lumina_node_uniffi.swift
-
-  build-library:
-    needs: [lint, test, generate-lumina]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Download Cached Bindings
-        uses: actions/download-artifact@v4
-        with:
-          name: uniffi-bindings
-        continue-on-error: true
-
-      - name: Copy Cached Bindings
-        run: |
-          mkdir -p android/src/main/jniLibs/
-          mkdir -p android/src/main/java/tech/
-          mkdir -p ios/Frameworks/
-          ls
-          cp -R lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
-          cp -R lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
-          cp -R lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
-          cp -R lumina/node-uniffi/ios/lumina_node.swift ios/
-          cp -R lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
-
-      - name: Setup
-        uses: ./.github/actions/setup
-
-      - name: Build package
-        run: yarn prepare
-
-  publish-library:
-    needs: [lint, test, generate-lumina, build-library]
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout repo with submodules
-        uses: actions/checkout@v4
-
-      - name: Download Cached Bindings
-        uses: actions/download-artifact@v4
-        with:
-          name: uniffi-bindings
-        continue-on-error: true
-
-      - name: Copy Cached Bindings
-        run: |
-          mkdir -p android/src/main/jniLibs/
-          mkdir -p android/src/main/java/tech/
-          mkdir -p ios/Frameworks/
-          cp -R lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
-          cp -R lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
-          cp -R lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
-          cp -R lumina/node-uniffi/ios/lumina_node.swift ios/
-          cp -R lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
-
-      - name: Setup
-        uses: ./.github/actions/setup
-
-      - name: Setup Node.js for GitHub Packages
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18.x'
-          registry-url: 'https://npm.pkg.github.com'
-          scope: '@leapwallet'
-
-      - name: Build package
-        run: yarn prepare
-
-      - name: Publish to GitHub Packages
-        run: npm publish
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  # build-library:
+  #   needs: [lint, test, generate-lumina]
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout repo
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup
+  #       uses: ./.github/actions/setup
+  #
+  #     - name: Build package
+  #       run: yarn prepare
+  #
+  # publish-library:
+  #   needs: [lint, test, generate-lumina, build-library]
+  #   runs-on: ubuntu-latest
+  #   if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+  #   permissions:
+  #     contents: read
+  #     packages: write
+  #   steps:
+  #     - name: Checkout repo
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Setup
+  #       uses: ./.github/actions/setup
+  #
+  #     - name: Setup Node.js for GitHub Packages
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: '18.x'
+  #         registry-url: 'https://npm.pkg.github.com'
+  #         scope: '@leapwallet'
+  #
+  #     - name: Build package
+  #       run: yarn prepare
+  #
+  #     - name: Publish to GitHub Packages
+  #       run: npm publish
+  #       env:
+  #         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

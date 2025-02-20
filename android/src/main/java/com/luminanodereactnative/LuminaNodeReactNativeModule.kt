@@ -314,8 +314,9 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
               is NodeEvent.SamplingFinished -> mapOf(
                 "type" to "samplingFinished",
                 "height" to event.height,
-//                "accepted" to event.accepted,
-//                "tookMs" to event.tookMs
+                "accepted" to event.accepted
+                "accepted" to event.accepted,
+                "tookMs" to event.tookMs
               )
               is NodeEvent.SamplingStarted -> {
                 Log.d("LuminaNode", "Sampling started $event.height")

@@ -1,21 +1,20 @@
-import { Text, View, StyleSheet, Pressable } from 'react-native';
+import { Text, View, StyleSheet, Pressable, FlatList } from 'react-native';
 import { isRunning, stop, eventEmitter, start } from 'lumina-node-react-native';
 import { useEffect, useState } from 'react';
-import SquareVisualization from './Square-Viz';
 
 const LIGHT_NODE_SYNCING_WINDOW_SECS = 2 * 24 * 60 * 60;
 
+function LogText({ item }: { item: any }) {
+  return <Text>{item}</Text>;
+}
+
 function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
-  const [visualData, setVisualData] = useState<any>();
+  const [visualData, setVisualData] = useState<any>([]);
 
   useEffect(() => {
     if (nodeRunning) {
       const handleLuminaNodeEvent = (event: any) => {
-        if (event.type === 'samplingStarted') {
-          if (visualData?.height !== event.height) {
-            setVisualData(event);
-          }
-        }
+        setVisualData([event, ...visualData]);
       };
 
       eventEmitter.addListener('luminaNodeEvent', handleLuminaNodeEvent);
@@ -27,7 +26,13 @@ function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
     };
   }, [nodeRunning, visualData]);
 
-  return <>{visualData ? <SquareVisualization events={visualData} /> : null}</>;
+  return (
+    <FlatList
+      data={visualData}
+      renderItem={LogText}
+      keyExtractor={(item) => item}
+    />
+  );
 }
 
 export default function App() {
