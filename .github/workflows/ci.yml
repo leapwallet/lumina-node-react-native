@@ -108,11 +108,12 @@ jobs:
           mkdir -p android/src/main/jniLibs/
           mkdir -p android/src/main/java/tech/
           mkdir -p ios/Frameworks/
-          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
-          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
-          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
-          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node.swift ios/
-          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
+          ls
+          cp -R lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
+          cp -R lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
+          cp -R lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
+          cp -R lumina/node-uniffi/ios/lumina_node.swift ios/
+          cp -R lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
 
       - name: Setup
         uses: ./.github/actions/setup
@@ -142,11 +143,11 @@ jobs:
           mkdir -p android/src/main/jniLibs/
           mkdir -p android/src/main/java/tech/
           mkdir -p ios/Frameworks/
-          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
-          cp -R uniffi-bindings/lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
-          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
-          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node.swift ios/
-          cp -R uniffi-bindings/lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
+          cp -R lumina/node-uniffi/app/src/main/jniLibs/ android/src/main/jniLibs/
+          cp -R lumina/node-uniffi/app/src/main/java/tech/ android/src/main/java/tech/
+          cp -R lumina/node-uniffi/ios/lumina.xcframework/ ios/Frameworks/
+          cp -R lumina/node-uniffi/ios/lumina_node.swift ios/
+          cp -R lumina/node-uniffi/ios/lumina_node_uniffi.swift ios/
 
       - name: Setup
         uses: ./.github/actions/setup
