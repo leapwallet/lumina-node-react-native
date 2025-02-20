@@ -64,7 +64,7 @@ jobs:
 
       - name: Try to download artifacts
         id: downloadArtifacts
-        uses: actions/download-artifacts@v3
+        uses: actions/download-artifact@v4
         with:
           name: uniffi-bindings
         continue-on-error: true
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload Binaries
         if: steps.downloadArtifacts.outcome == 'failure'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: uniffi-bindings
           path: |
@@ -98,7 +98,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download Cached Bindings
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: uniffi-bindings
         continue-on-error: true
@@ -132,7 +132,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download Cached Bindings
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: uniffi-bindings
         continue-on-error: true
