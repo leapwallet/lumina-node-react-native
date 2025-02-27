@@ -1,9 +1,5 @@
 # Contributing
 
-Contributions are always welcome, no matter how large or small!
-
-We want this community to be friendly and respectful to each other. Please follow it in all your interactions with the project. Before contributing, please read the [code of conduct](./CODE_OF_CONDUCT.md).
-
 ## Development workflow
 
 This project is a monorepo managed using [Yarn workspaces](https://yarnpkg.com/features/workspaces). It contains the following packages:
@@ -11,10 +7,19 @@ This project is a monorepo managed using [Yarn workspaces](https://yarnpkg.com/f
 - The library package in the root directory.
 - An example app in the `example/` directory.
 
-To get started with the project, run `yarn` in the root directory to install the required dependencies for each package:
+To get started with the project, clone the repository and install the required dependencies for each package.
 
 ```sh
+git clone https://github.com/mayank-1234/lumina-node-react-native
+cd lumina-node-react-native
+git submodule update --init --recursive
 yarn
+```
+
+Generate node-uniffi bindings
+
+```sh
+./generate_lumina_bindings.sh
 ```
 
 > Since the project relies on Yarn workspaces, you cannot use [`npm`](https://github.com/npm/cli) for development.
@@ -66,12 +71,6 @@ To fix formatting errors, run the following:
 
 ```sh
 yarn lint --fix
-```
-
-Remember to add tests for your change if possible. Run the unit tests by:
-
-```sh
-yarn test
 ```
 
 ### Commit message convention
