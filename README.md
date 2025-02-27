@@ -1,28 +1,40 @@
 # lumina-node-react-native
 
-Lumina node for react native apps
-
 ## Installation
 
 ```sh
 npm install lumina-node-react-native
+# or
+yarn add lumina-node-react-native
 ```
 
 ## Usage
 
+Start lumina node and listen to node events.
 
-```js
-import { multiply } from 'lumina-node-react-native';
+```typescript
+import * as LuminClient from 'lumina-node-react-native';
 
-// ...
+const network = 'mainnet'
+const syncingWindowSeconds = 2 * 24 * 3600 // 2 days
+await LuminaClient.start(network, syncingWindowSeconds)
 
-const result = multiply(3, 7);
+
+const eventListener = (event) => {
+  // Handle node events 
+}
+
+LuminaClient.eventEmitter.addListener('LuminaNodeEvent', eventListener)
+
+// Stop Node
+await LuminaClient.stop()
+
+
+// Check if node is running
+const running = await LuminaClient.isRunning()
+
+
 ```
-
-
-## Contributing
-
-See the [contributing guide](CONTRIBUTING.md) to learn how to contribute to the repository and the development workflow.
 
 ## License
 

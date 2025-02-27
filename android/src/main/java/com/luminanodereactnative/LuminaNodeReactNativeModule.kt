@@ -89,6 +89,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
       try {
         wasRunningBeforeBackground = node?.isRunning() ?: false
         if (wasRunningBeforeBackground) {
+
           stopEventLoop()
           node?.stop()
           Log.d("Lumina node", "Node stopped successfully in background")
@@ -313,6 +314,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
               is NodeEvent.SamplingFinished -> mutableMapOf(
                 "type" to "samplingFinished",
                 "height" to event.height,
+                "accepted" to event.accepted
                 "accepted" to event.accepted,
                 "tookMs" to event.tookMs
               )

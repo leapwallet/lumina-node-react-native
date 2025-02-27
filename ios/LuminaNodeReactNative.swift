@@ -68,8 +68,10 @@ class LuminaNodeReactNative: RCTEventEmitter {
   private var paused = false
   
   private var wasRunningBeforeBackground = false
+
   
   private var filterEventTypes = ["samplingStarted", "samplingFinished", "peerConnected", "connectingToBootnodes"]
+
 
   private static let maxSyncingWindow: Int = 30 * 24 * 60 * 60
   private let listenerState = ListenerState()
