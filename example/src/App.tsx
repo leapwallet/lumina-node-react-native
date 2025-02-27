@@ -1,5 +1,7 @@
-import { Text, View, StyleSheet, Pressable, FlatList } from 'react-native';
-import { isRunning, stop, eventEmitter, start } from 'lumina-node-react-native';
+
+import { Text, View, StyleSheet, Pressable } from 'react-native';
+//@ts-ignore
+import { isRunning, stop, eventEmitter, start } from '@leapwallet/lumina-node-react-native';
 import { useEffect, useState } from 'react';
 
 const LIGHT_NODE_SYNCING_WINDOW_SECS = 2 * 24 * 60 * 60;
@@ -14,7 +16,12 @@ function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
   useEffect(() => {
     if (nodeRunning) {
       const handleLuminaNodeEvent = (event: any) => {
-        setVisualData([event, ...visualData]);
+        if (event.type === 'samplingStarted') {
+          if (visualData?.height !== event.height) {
+            setVisualData(event);
+          }
+        }
+
       };
 
       eventEmitter.addListener('luminaNodeEvent', handleLuminaNodeEvent);

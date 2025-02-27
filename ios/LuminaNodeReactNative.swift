@@ -69,6 +69,10 @@ class LuminaNodeReactNative: RCTEventEmitter {
   
   private var wasRunningBeforeBackground = false
 
+  
+  private var filterEventTypes = ["samplingStarted", "samplingFinished", "peerConnected", "connectingToBootnodes"]
+
+
   private static let maxSyncingWindow: Int = 30 * 24 * 60 * 60
   private let listenerState = ListenerState()
  
@@ -95,8 +99,8 @@ class LuminaNodeReactNative: RCTEventEmitter {
     
     NotificationCenter.default.addObserver(
       self,
-      selector: #selector(applicationWillEnterForeground),
-      name: UIApplication.willEnterForegroundNotification,
+      selector: #selector(applicationDidEnterBackground),
+      name: UIApplication.didEnterBackgroundNotification,
       object: nil
     )
     
@@ -339,18 +343,21 @@ class LuminaNodeReactNative: RCTEventEmitter {
         }
         do {
           let event = try await node.nextEvent()
+          let uuid = NSUUID().uuidString
           let eventDict: [String: Any] = {
             switch event {
             case .connectingToBootnodes:
-              return ["type": "connectingToBootnodes"]
+              return ["id": uuid, "type": "connectingToBootnodes"]
             case .peerConnected(let id, let trusted):
               return [
+                "id": uuid,
                 "type": "peerConnected",
                 "peerId": id.peerId,
                 "trusted": trusted
               ]
             case .peerDisconnected(let id, let trusted):
               return [
+                "id": uuid,
                 "type": "peerDisconnected",
                 "peerId": id.peerId,
                 "trusted": trusted
@@ -358,25 +365,28 @@ class LuminaNodeReactNative: RCTEventEmitter {
             case .samplingStarted(let height, let squareWidth, let shares):
               print("Sampling started \(height)")
               return [
+                "id": uuid,
                 "type": "samplingStarted",
                 "height": height,
-                "squareWidth": squareWidth,
-                "shares": shares.map {
-                  [
-                    "row": $0.row,
-                    "column": $0.column
-                  ]
-                }
+//                "squareWidth": squareWidth,
+//                "shares": shares.map {
+//                  [
+//                    "row": $0.row,
+//                    "column": $0.column
+//                  ]
+//                }
               ]
             case .samplingFinished(let height, let accepted, let took):
               return [
+                "id": uuid,
                 "type": "samplingFinished",
                 "height": height,
                 "accepted": accepted,
-                "took": took
+                "tookMs": took
               ]
             case .shareSamplingResult(let height, let squareWidth, let row, let column, let accepted):
               return [
+                "id": uuid,
                 "type": "shareSamplingResult",
                 "height": height,
                 "squareWidth": squareWidth,
@@ -386,31 +396,38 @@ class LuminaNodeReactNative: RCTEventEmitter {
               ]
             case .prunedHeaders(let toHeight):
               return [
+                "id": uuid,
                 "type": "prunedHeaders",
                 "toHeight": toHeight
               ]
             case .fetchingHeadersStarted(let fromHeight, let toHeight):
               return [
+                "id": uuid,
                 "type": "fetchingHeadHeaderStarted",
                 "fromHeight": fromHeight,
                 "toHeight": toHeight
               ]
             case .fetchingHeadHeaderFinished(let height, let tookMs):
               return [
+                "id": uuid,
                 "type": "fetchingHeadHeaderStarted",
                 "height": height,
                 "tookMs": tookMs
               ]
             case .nodeStopped:
-              return ["type": "nodeStopped"]
+              return ["id": uuid, "type": "nodeStopped"]
             default:
-              return ["type": "unknown"]
+              return ["id": uuid, "type": "unknown"]
             }
           }()
-          await MainActor.run {
-            self.sendEvent(withName: "luminaNodeEvent", body: eventDict)
+          
+          
+          if(filterEventTypes.contains(eventDict["type"] as! String)){
+            await MainActor.run {
+              self.sendEvent(withName: "luminaNodeEvent", body: eventDict)
+            }
+            try await Task.sleep(nanoseconds: 5000_000_000)
           }
-          try await Task.sleep(nanoseconds: 1000_000_000)
         }catch {
           let errorDescription = error.localizedDescription
           await MainActor.run {

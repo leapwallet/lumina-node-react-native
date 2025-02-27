@@ -27,6 +27,7 @@ import uniffi.lumina_node_uniffi.LuminaNode
 import uniffi.lumina_node_uniffi.NodeConfig
 import uniffi.lumina_node_uniffi.NodeEvent
 import java.io.File
+import java.util.UUID
 
 @ReactModule(name = LuminaNodeReactNativeModule.NAME)
 class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
@@ -88,8 +89,9 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
       try {
         wasRunningBeforeBackground = node?.isRunning() ?: false
         if (wasRunningBeforeBackground) {
-          node?.stop()
+
           stopEventLoop()
+          node?.stop()
           Log.d("Lumina node", "Node stopped successfully in background")
         }
       } catch (e: Exception) {
@@ -106,7 +108,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
             node?.start()
             node?.waitConnected()
             Log.d("Lumina node", "Node restarted successfully in foreground")
-            startEventLoopIfNeeded()
+            startEventLoop()
             isEventLoopRunning = true
           }
           wasRunningBeforeBackground = false
@@ -121,10 +123,9 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun start(networkString: String, syncingWindowSecs: Double, promise: Promise?) {
-    runBlocking {
+    coroutineScope.launch {
       try {
         if(isInitialized){
-
           if(node?.isRunning() == false){
             Log.d("Lumina node", "starting node")
             node?.start()
@@ -246,72 +247,71 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   }
 
   private fun startEventLoopIfNeeded() {
-    Log.d("Lumina node", "Starting Event loop")
     if (eventLoopJob == null) {
       eventLoopJob = coroutineScope.launch {
         while (listenerCount != 0) {
           val event = node?.nextEvent()
           if (event != null) {
-            val eventData: Map<String, Any> = when(event) {
-              is NodeEvent.ConnectingToBootnodes -> mapOf("type" to "connectingToBootnodes")
+            val eventData: MutableMap<String, Any> = when(event) {
+              is NodeEvent.ConnectingToBootnodes -> mutableMapOf("type" to "connectingToBootnodes")
 
-              is NodeEvent.AddedHeaderFromHeaderSub -> mapOf(
+              is NodeEvent.AddedHeaderFromHeaderSub -> mutableMapOf(
                 "type" to "addedHeaderFromHeaderSub",
                 "height" to event.height
               )
-              is NodeEvent.FatalDaserError -> mapOf(
+              is NodeEvent.FatalDaserError -> mutableMapOf(
                 "type" to "fatalDaserError",
                 "error" to event.error
               )
-              is NodeEvent.FatalPrunerError -> mapOf(
+              is NodeEvent.FatalPrunerError -> mutableMapOf(
                 "type" to "fatalPrunerError",
                 "error" to event.error
               )
-              is NodeEvent.FatalSyncerError -> mapOf(
+              is NodeEvent.FatalSyncerError -> mutableMapOf(
                 "type" to "fatalSyncerError",
                 "error" to event.error
               )
-              is NodeEvent.FetchingHeadHeaderFinished -> mapOf(
+              is NodeEvent.FetchingHeadHeaderFinished -> mutableMapOf(
                 "type" to "fetchingHeadHeaderFinished",
                 "height" to event.height,
                 "tookMs" to event.tookMs
               )
-              NodeEvent.FetchingHeadHeaderStarted -> mapOf("type" to "fetchingHeadHeaderStarted")
-              is NodeEvent.FetchingHeadersFailed -> mapOf(
+              NodeEvent.FetchingHeadHeaderStarted -> mutableMapOf("type" to "fetchingHeadHeaderStarted")
+              is NodeEvent.FetchingHeadersFailed -> mutableMapOf(
                 "type" to "fetchingHeadersFailed",
                 "fromHeight" to event.fromHeight,
                 "toHeight" to event.toHeight,
                 "error" to event.error,
                 "tookMs" to event.tookMs
               )
-              is NodeEvent.FetchingHeadersFinished -> mapOf(
+              is NodeEvent.FetchingHeadersFinished -> mutableMapOf(
                 "type" to "fetchingHeadersFinished",
                 "fromHeight" to event.fromHeight,
                 "toHeight" to event.toHeight,
                 "tookMs" to event.tookMs
               )
-              is NodeEvent.FetchingHeadersStarted -> mapOf(
+              is NodeEvent.FetchingHeadersStarted -> mutableMapOf(
                 "type" to "fetchingHeadersStarted",
                 "fromHeight" to event.fromHeight,
                 "toHeight" to event.toHeight
               )
-              NodeEvent.NetworkCompromised -> mapOf("type" to "networkCompromised")
-              NodeEvent.NodeStopped -> mapOf("type" to "nodeStopped")
-              is NodeEvent.PeerConnected -> mapOf(
+              NodeEvent.NetworkCompromised -> mutableMapOf("type" to "networkCompromised")
+              NodeEvent.NodeStopped -> mutableMapOf("type" to "nodeStopped")
+              is NodeEvent.PeerConnected -> mutableMapOf(
                 "type" to "peerConnected",
                 "peerId" to event.id.peerId,
                 "trusted" to event.trusted
               )
-              is NodeEvent.PeerDisconnected -> mapOf(
+              is NodeEvent.PeerDisconnected -> mutableMapOf(
                 "type" to "peerDisconnected",
                 "peerId" to event.id.peerId,
                 "trusted" to event.trusted
               )
-              is NodeEvent.PrunedHeaders -> mapOf(
+              is NodeEvent.PrunedHeaders -> mutableMapOf(
                 "type" to "prunedHeaders",
                 "toHeight" to event.toHeight
               )
-              is NodeEvent.SamplingFinished -> mapOf(
+              is NodeEvent.SamplingFinished -> mutableMapOf(
                 "type" to "samplingFinished",
                 "height" to event.height,
                 "accepted" to event.accepted
@@ -320,7 +320,7 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
               )
               is NodeEvent.SamplingStarted -> {
                 Log.d("LuminaNode", "Sampling started $event.height")
-                mapOf(
+                mutableMapOf(
                 "type" to "samplingStarted",
                 "height" to event.height,
 //                "squareWidth" to event.squareWidth,
@@ -330,8 +330,9 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 //                    "column" to it.column
 //                  )
 //                }
-              )}
-              is NodeEvent.ShareSamplingResult -> mapOf(
+              )
+              }
+              is NodeEvent.ShareSamplingResult -> mutableMapOf(
                 "type" to "shareSamplingResult",
                 "height" to event.height,
 //                "squareWidth" to event.squareWidth,
@@ -340,12 +341,12 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 //                "accepted" to event.accepted
               )
             }
-
+            eventData["id"] = UUID.randomUUID().toString()
             Log.d("Lumina node", "$eventData")
             if(filterEventTypes.contains(eventData["type"])){
               val dataMap = convertMapToWritableMap(eventData)
               sendEvent(reactContext = reactApplicationContext, "luminaNodeEvent", params = dataMap)
-              delay(10000)
+              delay(5000)
             }
           }
           delay(100)
@@ -356,7 +357,6 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
 
   @ReactMethod
   fun startEventLoop(){
-    Log.d("Lumina node", "starting event loop")
     listenerCount += 1
     if(listenerCount == 1 && !isEventLoopRunning){
       startEventLoopIfNeeded()
