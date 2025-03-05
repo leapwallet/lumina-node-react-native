@@ -9,7 +9,7 @@ Pod::Spec.new do |s|
   s.homepage     = package["homepage"]
   s.license      = package["license"]
   s.authors      = package["author"]
-  s.platform    = :ios, '13.0'
+  s.platform     = :ios, '13.0'
   s.source       = { :git => "https://github.com/leapwallet/lumina-node-react-native.git", :tag => "#{s.version}" }
   s.source_files = "ios/**/*.{h,m,mm,cpp,swift}"
   s.private_header_files = "ios/generated/**/*.h"
@@ -51,6 +51,34 @@ Pod::Spec.new do |s|
 
   s.static_framework = true
   s.vendored_frameworks = ["ios/Frameworks/lumina.xcframework"]
+
+  s.script_phase = {
+    :name => "Strip UniFFI Symbols",
+    :execution_position => :after_compile,
+    :input_files => [],
+    :output_files => ["$(BUILT_PRODUCTS_DIR)/stripped_marker"],
+    :script => <<-SCRIPT
+      if [ "$CONFIGURATION" = "Release" ]; then
+        echo "Stripping debug symbols for Release build"
+
+        # Debug: Show where we're looking for files
+        echo "Built products dir: ${BUILT_PRODUCTS_DIR}"
+        echo "Product name: ${PRODUCT_NAME}"
+
+        # List all .a files to help debug
+        find "${BUILT_PRODUCTS_DIR}" -name "*.a" -ls
+
+        # Proceed with stripping if files are found
+        find "${BUILT_PRODUCTS_DIR}" -name "*.a" -exec strip -x {} \\;
+
+        # Create marker file for build system
+        touch "${BUILT_PRODUCTS_DIR}/stripped_marker"
+      else
+        echo "Skipping symbol stripping for non-Release build"
+      fi
+    SCRIPT
+
+  }
 
   # Use install_modules_dependencies helper to install the dependencies if React Native version >=0.71.0.
   if respond_to?(:install_modules_dependencies, true)
