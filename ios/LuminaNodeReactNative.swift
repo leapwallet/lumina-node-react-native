@@ -9,6 +9,7 @@ import React
 import Foundation
 import lumina_node_uniffiFFI
 
+
 extension BlockRange {
   func toDictionary() -> [String: Any] {
     return [
@@ -27,6 +28,18 @@ extension SyncingInfo {
     
   }
 }
+
+extension Array where Element == Coin {
+  func toDictionary() -> [[String: Any]] {
+    return self.map { coin in
+      return [
+        "denom": coin.denom,
+        "amount": String(coin.amount)
+      ]
+    }
+  }
+}
+
 
 extension Network {
   static func from(_ networkString: String?) -> Network? {
@@ -60,31 +73,95 @@ private actor ListenerState {
   }
 }
 
+class JavaScriptDelegateSigner: UniffiSigner, @unchecked Sendable {
+  private weak var eventEmitter: LuminaNodeReactNative?
+  private var pendingSignRequests: [String: CheckedContinuation<UniffiSignature, Error>] = [:]
+  private let requestQueue = DispatchQueue(label: "signature_requests", attributes: .concurrent)
+  
+  init(eventEmitter: LuminaNodeReactNative) {
+    self.eventEmitter = eventEmitter
+  }
+  
+  
+  
+  func sign(doc: SignDoc) async throws -> UniffiSignature {
+    let requestId = UUID().uuidString
+    
+    return try await withCheckedThrowingContinuation { continuation in
+      requestQueue.async(flags: .barrier) {
+        self.pendingSignRequests[requestId] = continuation
+      }
+      
+      let params: [String: Any] = [
+        "requestId": requestId,
+        "signDoc": self.serializeSignDoc(doc: doc)
+      ]
+      
+      DispatchQueue.main.async {
+        self.eventEmitter?.sendEvent(
+          withName: "requestSignature",
+          body: params
+        )
+      }
+    }
+  }
+  
+  func receiveSignature(requestId: String, signature: Data) {
+    requestQueue.async(flags: .barrier) {
+      if let continuation = self.pendingSignRequests.removeValue(forKey: requestId) {
+        let uniffiSignature = UniffiSignature(bytes: signature)
+        continuation.resume(returning: uniffiSignature)
+      }
+    }
+  }
+  
+  private func serializeSignDoc(doc: SignDoc) -> String {
+    let signDocDict: [String: Any] = [
+      "bodyBytes": doc.bodyBytes.base64EncodedString(),
+      "authInfoBytes": doc.authInfoBytes.base64EncodedString(),
+      "chainId": doc.chainId,
+      "accountNumber": String(doc.accountNumber)
+    ]
+    
+    do {
+      let jsonData = try JSONSerialization.data(withJSONObject: signDocDict, options: [])
+      return String(data: jsonData, encoding: .utf8) ?? "{}"
+    } catch {
+      print("Failed to serialize SignDoc: \(error)")
+      return "{}"
+    }
+  }
+}
+
 
 @objc(LuminaNodeReactNative)
 class LuminaNodeReactNative: RCTEventEmitter {
   private var node: LuminaNode?
   private var initialized = false
   private var paused = false
+  private var initializing = false
+  private var grpcClient: GrpcClient?
+  private var txClient: TxClient?
+  private lazy var jsSigner = JavaScriptDelegateSigner(eventEmitter: self)
   
   private var wasRunningBeforeBackground = false
-
+  
   
   private var filterEventTypes = ["samplingStarted", "samplingFinished", "peerConnected", "connectingToBootnodes"]
-
-
+  
+  
   private static let maxSyncingWindow: Int = 30 * 24 * 60 * 60
   private let listenerState = ListenerState()
- 
+  
   
   private let nodeQueue = DispatchQueue(label: "com.lumina.nodeQueue", qos: .userInitiated)
-
+  
   override static func moduleName() -> String {
     return "LuminaNodeReactNative"
   }
   
   override func supportedEvents() -> [String] {
-    return ["luminaNodeEvent"]
+    return ["luminaNodeEvent", "requestSignature"]
   }
   
   override init(){
@@ -110,30 +187,41 @@ class LuminaNodeReactNative: RCTEventEmitter {
     NotificationCenter.default.removeObserver(self)
   }
   
+  func cleanLockFiles() throws {
+    let basePath = try getBasePath()
+    let fileManager = FileManager.default
+    
+    let contents = try fileManager.contentsOfDirectory(atPath: basePath.path)
+    for item in contents {
+      if item.hasSuffix(".lock") {
+        let lockPath = basePath.appendingPathComponent(item).path
+        try fileManager.removeItem(atPath: lockPath)
+        print("Removed lock file: \(lockPath)")
+      }
+    }
+  }
+  
   @objc private func applicationWillEnterForeground(_ notification: NSNotification){
     guard initialized && wasRunningBeforeBackground else { return }
-      nodeQueue.async {
-        Task {
-          do {
-            if let nodeIsRunning = await self.node?.isRunning(), !nodeIsRunning {
-              
-              try await self.node?.start()
-              try await self.node?.waitConnected()
-              print("Node restarted successfully in foreground \(self.paused)")
-              
-              await self.listenerState.setHasListeners(true)
-              self.startEventLoop()
-            }
+    nodeQueue.async {
+      Task {
+        do {
+          if let nodeIsRunning = await self.node?.isRunning(), !nodeIsRunning {
             
-            self.wasRunningBeforeBackground = false
-
-          } catch {
-            print("Error restarting node in foreground: \(error.localizedDescription)")
-            self.wasRunningBeforeBackground = false
+            try await self.node?.start()
+            try await self.node?.waitConnected()
+            print("Node restarted successfully in foreground \(self.paused)")
+            
+            await self.listenerState.setHasListeners(true)
+            self.startEventLoop()
           }
+          self.wasRunningBeforeBackground = false
+        } catch {
+          print("Error restarting node in foreground: \(error.localizedDescription)")
+          self.wasRunningBeforeBackground = false
         }
       }
-    
+    }
   }
   
   @objc private func applicationDidEnterBackground(_ notification: Notification) {
@@ -183,13 +271,195 @@ class LuminaNodeReactNative: RCTEventEmitter {
     return basePath
   }
   
+  @objc(initGrpcClient:resolver:rejecter:)
+  func initGrpcClient(url: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
+    Task {
+      do {
+        self.grpcClient = try await GrpcClient.create(url: url)
+      } catch {
+        reject("ERROR Creating Grpc Client", error.localizedDescription, error)
+      }
+    }
+  }
+  
+  @objc(getBalances:resolver:rejecter:)
+  func getBalances(address: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
+    Task {
+      do {
+        let balances = try await self.grpcClient?.getAllBalances(address: parseBech32Address(bech32Address: address))
+        
+        let objectToSerialize = balances?.toDictionary()
+        print("Address: \(address)")
+        print("Object type: \(type(of: objectToSerialize))")
+        print("Array (with default): \(objectToSerialize)")
+        balances?.forEach { coin in
+          print("denom \(coin.denom)")
+          print("amount \(coin.amount)")
+        }
+        
+        
+        
+        let dictionaries = balances?.toDictionary() ?? []
+        let jsonData = try JSONSerialization.data(withJSONObject: dictionaries, options: .prettyPrinted)
+        if let jsonString = String(data: jsonData, encoding: .utf8) {
+          print("json string", jsonString)
+          resolve(jsonString)
+        } else {
+          reject("JSON_ERROR", "Failed to convert JSON data to string", nil)
+        }
+      }catch {
+        reject("ERROR Fetching balances", error.localizedDescription, error)
+      }
+    }
+  }
+  
+  @objc(getSpendableBalances:resolver:rejecter:)
+  func getSpendableBalances(address: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock){
+    Task {
+      do {
+        let balances = try await self.grpcClient?.getSpendableBalances(address: parseBech32Address(bech32Address: address))
+        
+        let objectToSerialize = balances?.toDictionary()
+        print("Spendabled Balances: Address: \(address)")
+        print("Spendabled Balances: Object type: \(type(of: objectToSerialize))")
+        print("Spendabled Balances: Array (with default): \(objectToSerialize)")
+        balances?.forEach { coin in
+          print("Spendabled Balances: denom \(coin.denom)")
+          print("Spendabled Balances: amount \(coin.amount)")
+        }
+        
+        
+        
+        let dictionaries = balances?.toDictionary() ?? []
+        let jsonData = try JSONSerialization.data(withJSONObject: dictionaries, options: .prettyPrinted)
+        if let jsonString = String(data: jsonData, encoding: .utf8) {
+          print("Spendabled Balances: json string", jsonString)
+          resolve(jsonString)
+        } else {
+          reject("JSON_ERROR", "Failed to convert JSON data to string", nil)
+        }
+      }catch {
+        reject("ERROR Fetching balances", error.localizedDescription, error)
+      }
+    }
+  }
+  
+  @objc(initTxClient:address:publicKey:resolver:rejecter:)
+  func initTxClient(
+    url: String,
+    address: String,
+    publicKey: String,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    Task {
+      do {
+        let accountAddress: RustAddress = try parseBech32Address(bech32Address: address)
+        
+        guard let publicKeyData = Data(base64Encoded: publicKey) else {
+          reject("INIT_TX_CLIENT_ERROR", "Invalid base64 public key", nil)
+          return
+        }
+        
+        let accountPubKey = publicKeyData
+        
+        print("Init client: \(url) \(address) \(publicKey)")
+        
+        txClient = try await TxClient.create(
+          url: url,
+          accountAddress: accountAddress,
+          accountPubkey: accountPubKey,
+          signer: jsSigner
+        )
+        
+        resolve("client initialized")
+      } catch {
+        reject("INIT_TX_CLIENT_ERROR", error.localizedDescription, error)
+      }
+    }
+  }
+  
+  @objc(submitMessage:resolver:rejecter:)
+  func submitMessage(
+    doc: NSDictionary,
+    resolve: @escaping RCTPromiseResolveBlock,
+    reject: @escaping RCTPromiseRejectBlock
+  ) {
+    Task {
+      do {
+        guard let type = doc["type"] as? String,
+              let value = doc["value"] as? String,
+              let gasLimit = doc["gasLimit"] as? String,
+              let gasPrice = doc["gasPrice"] as? String,
+              let memo = doc["memo"] as? String else {
+                reject("SUBMIT_MESSAGE_ERROR", "Invalid message parameters", nil)
+                return
+              }
+        
+        guard let valueData = Data(base64Encoded: value) else {
+          reject("SUBMIT_MESSAGE_ERROR", "Invalid base64 value", nil)
+          return
+        }
+        
+        
+        let message = AnyMsg(type: type, value: valueData)
+        
+        guard let gasLimitUInt = UInt64(gasLimit),
+              let gasPriceDouble = Double(gasPrice) else {
+          reject("SUBMIT_MESSAGE_ERROR", "Invalid gas parameters", nil)
+          return
+        }
+        
+        let txConfig = TxConfig(gasLimit: gasLimitUInt, gasPrice: gasPriceDouble, memo: memo)
+        
+        print("Submitting message")
+        
+        guard let client = txClient else {
+          reject("SUBMIT_MESSAGE_ERROR", "TxClient not initialized", nil)
+          return
+        }
+        
+        let txInfo = try await client.submitMessage(message: message, config: txConfig)
+        
+        print("txInfo: \(txInfo)")
+        
+        // Handle hash conversion based on UniffiHash type
+        let hexString: String
+        switch txInfo.hash {
+        case .sha256(let hashBytes):
+          hexString = hashBytes.map { String(format: "%02x", $0) }.joined()
+        default:
+          // Handle other hash types if needed
+          hexString = ""
+        }
+        
+        resolve(hexString)
+      } catch {
+        print("Transaction failed: \(error)")
+        reject("SUBMIT_MESSAGE_ERROR", error.localizedDescription, error)
+      }
+    }
+  }
+  
+  @objc(provideSignature:signatureHex:)
+  func provideSignature(requestId: String, signatureHex: String) {
+    guard let signatureData = Data(base64Encoded: signatureHex) else {
+      print("Invalid base64 signature")
+      return
+    }
+    
+    jsSigner.receiveSignature(requestId: requestId, signature: signatureData)
+  }
+  
   @objc(start:syncingWindowSecs:resolver:rejecter:)
   func start(networkString: String, syncingWindowSecs: Int, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
     nodeQueue.async {
       Task {
+        //        if(self.initializing) {
+        //          return
+        //        }
         do {
           if(self.initialized == true){
-           
             let nodeIsRunning = await self.node?.isRunning()
             print("printing node is running \(String(describing: nodeIsRunning))")
             if(nodeIsRunning == false){
@@ -205,15 +475,27 @@ class LuminaNodeReactNative: RCTEventEmitter {
               return
             }
           }else{
+            self.initializing = true
             guard let network = Network.from(networkString) else {
               DispatchQueue.main.async {
                 reject("ERROR", "Unable to get network for \(networkString)", nil)
               }
               return
             }
+            
+            do {
+              try self.cleanLockFiles()
+            } catch {
+              DispatchQueue.main.async {
+                reject("ERROR", "FAiled to clean lock file at path: \(error.localizedDescription)", error)
+              }
+            }
             let basePath: URL
             do {
               basePath = try self.getBasePath()
+              print("self.initialized", self.initialized)
+              
+              
             } catch {
               DispatchQueue.main.async {
                 reject("ERROR", "FAiled to get base apth: \(error.localizedDescription)", error)
@@ -221,16 +503,17 @@ class LuminaNodeReactNative: RCTEventEmitter {
               return
             }
             
+            
+            
             let config = NodeConfig(
               basePath: basePath.path,
               network: network,
               bootnodes: nil,
-              syncingWindowSecs: self.convertTo30DayMaxUInt32(seconds: syncingWindowSecs),
-              pruningDelaySecs: 120,
+              samplingWindowSecs: self.convertTo30DayMaxUInt32(seconds: syncingWindowSecs),
+              pruningWindowSecs: 120,
               batchSize: nil,
               ed25519SecretKeyBytes: nil
             )
-            
             
             do {
               self.node = try LuminaNode(config: config)
@@ -242,6 +525,7 @@ class LuminaNodeReactNative: RCTEventEmitter {
               try await self.node?.waitConnected()
               print("LuminaNode connected successfully")
               self.initialized = true
+              self.initializing = false
               
               DispatchQueue.main.async {
                 resolve(true)
@@ -251,7 +535,6 @@ class LuminaNodeReactNative: RCTEventEmitter {
                 reject("ERROR", error.localizedDescription, error)
               }
             }
-            
           }
         } catch {
           DispatchQueue.main.async {
@@ -283,7 +566,7 @@ class LuminaNodeReactNative: RCTEventEmitter {
           DispatchQueue.main.async {
             resolve("Node stopped")
           }
-
+          
         }catch{
           DispatchQueue.main.async{
             reject("ERROR", error.localizedDescription, error)
@@ -303,7 +586,7 @@ class LuminaNodeReactNative: RCTEventEmitter {
           DispatchQueue.main.async {
             resolve(jsonData)
           }
-
+          
         }catch{
           DispatchQueue.main.async {
             reject("ERROR", error.localizedDescription, error)
@@ -326,7 +609,7 @@ class LuminaNodeReactNative: RCTEventEmitter {
     }
   }
   
-  private func startEventLoop(){
+  private func startEventLoop() {
     Task.detached(priority: .userInitiated) { [weak self] in
       guard let self = self else {return}
       
@@ -368,23 +651,15 @@ class LuminaNodeReactNative: RCTEventEmitter {
                 "id": uuid,
                 "type": "samplingStarted",
                 "height": height,
-//                "squareWidth": squareWidth,
-//                "shares": shares.map {
-//                  [
-//                    "row": $0.row,
-//                    "column": $0.column
-//                  ]
-//                }
               ]
-            case .samplingFinished(let height, let accepted, let took):
+            case .samplingResult(let height, let timedOut, let tookMs):
               return [
                 "id": uuid,
                 "type": "samplingFinished",
                 "height": height,
-                "accepted": accepted,
-                "tookMs": took
+                "tookMs": tookMs
               ]
-            case .shareSamplingResult(let height, let squareWidth, let row, let column, let accepted):
+            case .shareSamplingResult(let height, let squareWidth, let row, let column, let timedOut):
               return [
                 "id": uuid,
                 "type": "shareSamplingResult",
@@ -392,9 +667,9 @@ class LuminaNodeReactNative: RCTEventEmitter {
                 "squareWidth": squareWidth,
                 "row": row,
                 "column": column,
-                "accepted": accepted
+                "timedOut": timedOut
               ]
-            case .prunedHeaders(let toHeight):
+            case .prunedHeaders(let fromHeight, let toHeight):
               return [
                 "id": uuid,
                 "type": "prunedHeaders",
@@ -421,8 +696,11 @@ class LuminaNodeReactNative: RCTEventEmitter {
             }
           }()
           
+          print(eventDict)
+          
           
           if(filterEventTypes.contains(eventDict["type"] as! String)){
+            
             await MainActor.run {
               self.sendEvent(withName: "luminaNodeEvent", body: eventDict)
             }

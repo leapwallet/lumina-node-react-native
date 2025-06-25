@@ -1,6 +1,6 @@
 {
   "name": "@leapwallet/lumina-node-react-native",
-  "version": "0.1.4",
+  "version": "0.2.0",
   "description": "Lumina node for react native apps",
   "source": "./src/index",
   "main": "./lib/commonjs/index.js",
