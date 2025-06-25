@@ -72,7 +72,6 @@ export const createTransactionSigner = (signingFunction: SigningFunction) => {
 
         try {
           const signature = await signingFunction(signDoc);
-          console.log('signature', signature);
           LuminaNodeReactNative.provideSignature(requestId, signature);
         } catch (error) {
           console.error('Signing failed:', error);
@@ -93,8 +92,6 @@ export const createTransactionSigner = (signingFunction: SigningFunction) => {
     if (!isInitialized) {
       initialize();
     }
-
-    console.log('doc', doc);
 
     return await LuminaNodeReactNative.submitMessage(doc);
   };
