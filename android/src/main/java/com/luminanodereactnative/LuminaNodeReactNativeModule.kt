@@ -1,6 +1,8 @@
 package com.luminanodereactnative
 
+import android.util.Base64
 import android.util.Log
+import com.facebook.common.util.Hex
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
@@ -8,11 +10,14 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.gson.Gson
+import com.sun.jna.Pointer
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,13 +26,26 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import uniffi.celestia_grpc.AnyMsg
+import uniffi.celestia_grpc.GrpcClient
+import uniffi.celestia_grpc.TxClient
+import uniffi.celestia_grpc.TxConfig
+import uniffi.celestia_grpc.UniffiSignature
+import uniffi.celestia_grpc.UniffiSigner
+import uniffi.celestia_grpc.parseBech32Address
+import uniffi.celestia_proto.SignDoc
+import uniffi.celestia_types.RustAddress
+import uniffi.celestia_types.UniffiHash
 import uniffi.lumina_node.Network
 import uniffi.lumina_node.NetworkId
+import uniffi.lumina_node_uniffi.FfiConverterString
 import uniffi.lumina_node_uniffi.LuminaNode
 import uniffi.lumina_node_uniffi.NodeConfig
 import uniffi.lumina_node_uniffi.NodeEvent
 import java.io.File
+import java.lang.ref.WeakReference
 import java.util.UUID
+
 
 @ReactModule(name = LuminaNodeReactNativeModule.NAME)
 class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
@@ -38,9 +56,14 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   var listenerCount: Int = 0
   private var isInitialized = false
 
+
+
   private val coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
   private var wasRunningBeforeBackground = false
   private var eventLoopJob: Job? = null
+  private var txClient: TxClient? = null
+  private var grpcClient: GrpcClient? = null
+  val jsSigner = JavaScriptDelegateSigner(reactContext = reactApplicationContext)
 
 
   companion object {
@@ -58,7 +81,6 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
   init {
     System.loadLibrary("lumina_node_uniffi")
     reactContext.addLifecycleEventListener(this)
-
   }
 
   override fun getName(): String {
@@ -78,9 +100,19 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
     }
   }
 
+  private fun cleanup() {
+    try {
+
+      grpcClient = null
+    } catch (e: Exception) {
+      Log.e("ReactModule", "Error during cleanup", e)
+    }
+  }
+
   override fun onHostDestroy() {
     stopEventLoop()
     coroutineScope.cancel()
+    cleanup()
     reactApplicationContext.removeLifecycleEventListener(this)
   }
 
@@ -118,7 +150,112 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
         }
       }
     }
+  }
 
+  @ReactMethod
+  fun initTxClient(url: String, address: String, publicKey: String, promise: Promise?) {
+    coroutineScope.launch {
+      try {
+        val accountAddress: RustAddress = parseBech32Address(address)
+        val accountPubKey = Base64.decode(publicKey, Base64.DEFAULT)
+        Log.i("Init client", "$url $address $publicKey")
+        txClient = TxClient.create(url, accountAddress, accountPubKey, jsSigner)
+
+        promise?.resolve("client initialized")
+      } catch (e: Exception) {
+        promise?.reject("INIT_TX_CLIENT_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun initGrpcClient(url: String, promise: Promise?){
+    coroutineScope.launch {
+      try {
+
+        grpcClient = GrpcClient.create(url)
+
+      } catch (e: Exception) {
+        promise?.reject("INIT_GRPC_CLIENT_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getBalances(address: String, promise: Promise?){
+    coroutineScope.launch {
+      try {
+        Log.i("GRPC Client", "Balances for $address")
+        val balances = grpcClient?.getAllBalances(parseBech32Address(address))
+        Log.i("GRPC Client", "Spendable Balances $balances")
+
+        val gson = Gson()
+        promise?.resolve(gson.toJson(balances))
+      }catch (e: Exception){
+        promise?.reject("Unable to get balance", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun getSpendableBalances(address: String, promise: Promise?){
+    coroutineScope.launch {
+      try {
+        Log.i("GRPC Client", "Spendable Balances for $address")
+        val balances = grpcClient?.getSpendableBalances(parseBech32Address(address))
+        Log.i("GRPC Client", "Spendable Balances $balances")
+        val gson = Gson()
+        promise?.resolve(gson.toJson(balances))
+      }catch (e: Exception){
+        promise?.reject("Unable to get balance", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun submitMessage(doc: ReadableMap, promise: Promise?) {
+    coroutineScope.launch {
+      try {
+        val type = doc.getString("type")
+        val value = doc.getString("value")
+        val gasLimit = doc.getString("gasLimit")
+        val gasPrice = doc.getString("gasPrice")
+        val memo = doc.getString("memo")
+
+        val valueBytes = Base64.decode(value, Base64.DEFAULT)
+
+        val message = (type)?.let { typeVal ->
+          (valueBytes)?.let { msg ->
+            AnyMsg(typeVal, msg)
+          }
+        }
+
+        val msgType = message?.type
+
+        Log.d("GRPC Client", "Submitting message")
+
+        val txInfo = message?.let {
+          txClient?.submitMessage(it, TxConfig(gasLimit?.toULong(), gasPrice?.toDouble(), memo))
+        }
+        Log.i("GRPC Client", "txInfo $txInfo")
+        val hashBytes = (txInfo?.hash as UniffiHash.Sha256).hash
+        var hexString = ""
+        for (byte in hashBytes) {
+          hexString += String.format("%02x", byte)
+        }
+
+        promise?.resolve(hexString)
+      } catch (e: Exception) {
+        Log.d("Submit message", "transaction failed $e")
+        promise?.reject("SUBMIT_MESSAGE_ERROR", e.message, e)
+      }
+    }
+  }
+
+  @ReactMethod
+  fun provideSignature(requestId: String, signatureHex: String) {
+    val signature = Base64.decode(signatureHex, Base64.DEFAULT)
+    jsSigner.receiveSignature(requestId, signature)
   }
 
   @ReactMethod
@@ -149,9 +286,9 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
             basePath = basePath.path,
             network = network,
             bootnodes = null,
-            syncingWindowSecs = convert30DayMaxUInt(syncingWindowSecs),
-            pruningDelaySecs = 60.toUInt(),
-            batchSize = 64UL,
+            samplingWindowSecs = null,
+            pruningWindowSecs = null,
+            batchSize = null,
             ed25519SecretKeyBytes = null
           )
           Log.d("Lumina node", "starting node: init node config success")
@@ -311,33 +448,33 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
                 "type" to "prunedHeaders",
                 "toHeight" to event.toHeight
               )
-              is NodeEvent.SamplingFinished -> mutableMapOf(
-                "type" to "samplingFinished",
-                "height" to event.height,
-                "accepted" to event.accepted,
-                "tookMs" to event.tookMs
-              )
+
               is NodeEvent.SamplingStarted -> {
                 Log.d("LuminaNode", "Sampling started $event.height")
                 mutableMapOf(
                 "type" to "samplingStarted",
                 "height" to event.height,
-//                "squareWidth" to event.squareWidth,
-//                "shares" to event.shares.map {
-//                  mapOf(
-//                    "row" to it.row,
-//                    "column" to it.column
-//                  )
-//                }
+                "squareWidth" to event.squareWidth,
+                "shares" to event.shares.map {
+                  mapOf(
+                    "row" to it.row,
+                    "column" to it.column
+                  )
+                }
               )
               }
               is NodeEvent.ShareSamplingResult -> mutableMapOf(
                 "type" to "shareSamplingResult",
                 "height" to event.height,
-//                "squareWidth" to event.squareWidth,
-//                "row" to event.row,
-//                "column" to event.column,
-//                "accepted" to event.accepted
+                "squareWidth" to event.squareWidth,
+                "row" to event.row,
+                "column" to event.column
+              )
+
+              is NodeEvent.SamplingResult -> mutableMapOf(
+                "type" to "samplingFinished",
+                "height" to event.height,
+                "tookMs" to event.tookMs
               )
             }
             eventData["id"] = UUID.randomUUID().toString()
@@ -419,5 +556,58 @@ class LuminaNodeReactNativeModule(reactContext: ReactApplicationContext) :
       }
     }
     return writableArray
+  }
+
+
+}
+
+class JavaScriptDelegateSigner(
+  private val reactContext: ReactApplicationContext
+): UniffiSigner {
+
+  private val pendingSignRequests = mutableMapOf<String, CompletableDeferred<ByteArray>>()
+
+  override suspend fun sign(doc: SignDoc): UniffiSignature {
+    val requestId = UUID.randomUUID().toString()
+    val deferred = CompletableDeferred<ByteArray>()
+
+    pendingSignRequests[requestId] = deferred
+
+    val params = Arguments.createMap().apply {
+      putString("requestId", requestId)
+      putString("signDoc", serializeSignDoc(doc)) // Convert SignDoc to JSON
+    }
+
+    reactContext
+      .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+      .emit("requestSignature", params)
+
+    val signature = deferred.await()
+
+    pendingSignRequests.remove(requestId)
+    val base64Signature = Base64.encodeToString(signature, Base64.DEFAULT)
+    Log.d("base64 signature", base64Signature)
+    Log.d("Signature", "$signature")
+
+
+    return UniffiSignature(signature)
+  }
+
+  // Method to receive signature from JavaScript
+  fun receiveSignature(requestId: String, signature: ByteArray) {
+    pendingSignRequests[requestId]?.complete(signature)
+  }
+
+  private fun serializeSignDoc(doc: SignDoc): String {
+    val gson = Gson()
+
+    val signDocMap = mapOf(
+      "bodyBytes" to Base64.encodeToString(doc.bodyBytes, Base64.NO_WRAP),
+      "authInfoBytes" to Base64.encodeToString(doc.authInfoBytes, Base64.NO_WRAP),
+      "chainId" to doc.chainId,
+      "accountNumber" to doc.accountNumber.toString()
+    )
+
+    return gson.toJson(signDocMap)
   }
 }

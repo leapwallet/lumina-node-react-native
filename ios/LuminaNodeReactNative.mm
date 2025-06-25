@@ -18,4 +18,30 @@ RCT_EXTERN_METHOD(stop:(RCTPromiseResolveBlock)resolve
 
 RCT_EXTERN_METHOD(syncerInfo:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(initGrpcClient:(NSString *)url
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(getBalances:(NSString *)address
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(getSpendableBalances:(NSString *)address
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(initTxClient:(NSString *)url
+                 address:(NSString *)address
+                 publicKey:(NSString *)publicKey
+                 resolver:(RCTPromiseResolveBlock)resolve
+                 rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(submitMessage:(NSDictionary *)doc
+                 resolver:(RCTPromiseResolveBlock)resolve
+                 rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(provideSignature:(NSString *)requestId
+                 signatureHex:(NSString *)signatureHex)
+
 @end

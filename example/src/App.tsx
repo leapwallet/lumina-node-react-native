@@ -1,14 +1,14 @@
-
 import { Text, View, StyleSheet, Pressable } from 'react-native';
 //@ts-ignore
-import { isRunning, stop, eventEmitter, start } from '@leapwallet/lumina-node-react-native';
+import {
+  isRunning,
+  stop,
+  eventEmitter,
+  start,
+} from '@leapwallet/lumina-node-react-native';
 import { useEffect, useState } from 'react';
 
 const LIGHT_NODE_SYNCING_WINDOW_SECS = 2 * 24 * 60 * 60;
-
-function LogText({ item }: { item: any }) {
-  return <Text>{item}</Text>;
-}
 
 function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
   const [visualData, setVisualData] = useState<any>([]);
@@ -16,30 +16,24 @@ function NodeEvents({ nodeRunning }: { nodeRunning?: boolean }) {
   useEffect(() => {
     if (nodeRunning) {
       const handleLuminaNodeEvent = (event: any) => {
-        if (event.type === 'samplingStarted') {
-          if (visualData?.height !== event.height) {
+        console;
+        if (visualData?.height !== event.height) {
+          if (event.type === 'samplingStarted') {
+            console.log('logging event', event);
             setVisualData(event);
           }
         }
-
       };
 
       eventEmitter.addListener('luminaNodeEvent', handleLuminaNodeEvent);
     }
-    return () => {
-      if (nodeRunning) {
-        eventEmitter.removeAllListeners('luminaNodeEvent');
-      }
-    };
   }, [nodeRunning, visualData]);
 
-  return (
-    <FlatList
-      data={visualData}
-      renderItem={LogText}
-      keyExtractor={(item) => item}
-    />
-  );
+  useEffect(() => {}, [nodeRunning, visualData]);
+  //console.log('logging visual data', visualData)
+
+  return null;
+  //<SquareVisualization events={visualData} />
 }
 
 export default function App() {
