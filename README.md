@@ -1,5 +1,7 @@
 # lumina-node-react-native
 
+A React Native library that provides an interface to run and control a Lumina node from mobile apps. Use this package to start and stop a Lumina node, listen for node events, and check node status so you can integrate on-device blockchain syncing and events into your React Native application.
+
 ## Installation
 
 ```sh
